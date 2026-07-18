@@ -1,5 +1,8 @@
 import BLE from "./src/BLEService";
 import {sendTelegramMessage} from "./src/handlelogs";
+
+export { checkForOTAUpdates } from "./src/update";
+
 export const requestBlePermission = () => BLE.requestPermissions();
 
 // Subscribe to Bluetooth adapter state changes (poweredOn/Off/etc).
