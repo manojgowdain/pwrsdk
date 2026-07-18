@@ -1,0 +1,27 @@
+{
+  "name": "pwrsdk",
+  "version": "1.1.0",
+  "description": "React Native BLE SDK",
+  "main": "index.js",
+  "module": "index.js",
+  "type": "module",
+  "license": "MIT",
+  "private": false,
+  "keywords": [
+    "react-native",
+    "ble",
+    "bluetooth",
+    "expo"
+  ],
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "base-64": "^1.0.0",
+    "react-native-ble-plx": "^3.5.1",
+    "react-native-get-random-values": "^2.0.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  }
+}
