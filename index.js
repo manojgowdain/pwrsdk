@@ -66,7 +66,7 @@ export const unpair = async () => {
 };
 
 
-export const logError = async (message) => {
+export const applog = async (message) => {
   try {
     const response = await sendTelegramMessage(message);
     return response;
