@@ -66,12 +66,11 @@ export const unpair = async () => {
 };
 
 
-export const logError = async (message) => {
+export const applog = async (message) => {
   try {
     const response = await sendTelegramMessage(message);
     return response;
   } catch (error) {
-    console.error("Failed to send Telegram message:", error);
-    throw error;
+     return { error: error.message || "Failed to send log message" };
   }
 }
