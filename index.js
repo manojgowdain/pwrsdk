@@ -1,5 +1,5 @@
-import BLE from "./BLEService";
-
+import BLE from "./src/BLEService";
+import {sendTelegramMessage} from "./src/handlelogs";
 export const requestBlePermission = () => BLE.requestPermissions();
 
 // Subscribe to Bluetooth adapter state changes (poweredOn/Off/etc).
@@ -64,3 +64,14 @@ export const unpair = async () => {
   await BLE.disconnect();
   return true;
 };
+
+
+export const logError = async (message) => {
+  try {
+    const response = await sendTelegramMessage(message);
+    return response;
+  } catch (error) {
+    console.error("Failed to send Telegram message:", error);
+    throw error;
+  }
+}

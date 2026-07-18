@@ -2,7 +2,7 @@ import "react-native-get-random-values";
 import { BleManager } from "react-native-ble-plx";
 import { Platform, PermissionsAndroid } from "react-native";
 import { decode as atob } from "base-64";
-import { SERVICE_UUID, CHARACTERISTICS } from "./BLEConfig.js";
+import { SERVICE_UUID, CHARACTERISTICS } from "./src/BLEConfig.js";
 
 class BLEService {
   constructor() {
