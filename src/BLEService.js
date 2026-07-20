@@ -3,6 +3,7 @@ import { BleManager } from "react-native-ble-plx";
 import { Platform, PermissionsAndroid } from "react-native";
 import { decode as atob } from "base-64";
 import { SERVICE_UUID, CHARACTERISTICS } from "./BLEConfig.js";
+import { KalmanFilter } from "./KalmanFilter.js";
 import {
   RawPayloadSchema,
   HealthReadingSchema,
@@ -18,6 +19,19 @@ class BLEService {
     this.manager = new BleManager();
     this.device = null;
     this.subscription = null;
+
+    // Kalman filters smooth the noisy sensor channels (HR, SpO2,
+    // temperature) so a single garbage/dropped-bit sample from the
+    // wearable doesn't spike straight through to the UI. Battery and
+    // steps are monotonic/discrete counters, not noisy analog
+    // readings, so they're passed through unfiltered.
+    this._resetFilters();
+  }
+
+  _resetFilters() {
+    this.hrFilter = new KalmanFilter({ R: 4, Q: 0.05 });
+    this.spo2Filter = new KalmanFilter({ R: 2, Q: 0.02 });
+    this.tempFilter = new KalmanFilter({ R: 0.5, Q: 0.01 });
   }
 
   // ==========================
@@ -105,6 +119,10 @@ class BLEService {
 
     await this.device.discoverAllServicesAndCharacteristics();
 
+    // Fresh device, fresh sensor stream — don't let filters carry
+    // stale estimates over from a previous connection.
+    this._resetFilters();
+
     return this.device;
   }
 
@@ -122,6 +140,8 @@ class BLEService {
     this.device = await this.manager.connectToDevice(parsed.data);
 
     await this.device.discoverAllServicesAndCharacteristics();
+
+    this._resetFilters();
 
     return this.device;
   }
@@ -158,10 +178,12 @@ class BLEService {
   // FIX: remove any existing subscription before creating a new one,
   // otherwise calling monitorHealthMetrics() twice leaks the old listener.
   // Zod (schemas live in BLEService.schema.js) validates the raw
-  // payload shape and the numeric ranges before any unit conversion
-  // or derived math runs, so a malformed or out-of-range packet from
-  // the wearable surfaces as a clear validation error instead of
-  // silently producing NaN/garbage stats.
+  // payload shape and numeric ranges first, filtering out anything
+  // structurally malformed. The surviving hr/spo2/temperature samples
+  // are then passed through per-channel Kalman filters so a
+  // one-off garbage reading gets smoothed against the recent trend
+  // instead of appearing as a spike in the UI. Battery and steps
+  // pass through unfiltered since they're not noisy analog signals.
   // ==========================
   monitorHealthMetrics(callback) {
     if (!this.device) return;
@@ -225,18 +247,25 @@ class BLEService {
             steps: validSteps,
           } = readingResult.data;
 
-          const tempF = Number(((validTempC * 9) / 5 + 32).toFixed(2));
-          const tempK = Number((validTempC + 273.15).toFixed(2));
+          // Smooth the noisy analog channels. A single dropped-bit
+          // or motion-artifact sample gets pulled back toward the
+          // recent trend instead of passing straight through.
+          const smoothedHr = Math.round(this.hrFilter.filter(validHr));
+          const smoothedSpo2 = Math.round(this.spo2Filter.filter(validSpo2));
+          const smoothedTempC = Number(this.tempFilter.filter(validTempC).toFixed(2));
+
+          const tempF = Number(((smoothedTempC * 9) / 5 + 32).toFixed(2));
+          const tempK = Number((smoothedTempC + 273.15).toFixed(2));
 
           // Approximate calculations
           const calories = Number((validSteps * 0.04).toFixed(2));
           const distance = Number(((validSteps * 0.75) / 1000).toFixed(2));
 
           const healthMetrics = {
-            heartRate: validHr,
-            spo2: validSpo2,
+            heartRate: smoothedHr,
+            spo2: smoothedSpo2,
             temperature: {
-              celsius: validTempC,
+              celsius: smoothedTempC,
               fahrenheit: tempF,
               kelvin: tempK,
             },
