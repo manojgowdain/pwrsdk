@@ -3,6 +3,15 @@ import { BleManager } from "react-native-ble-plx";
 import { Platform, PermissionsAndroid } from "react-native";
 import { decode as atob } from "base-64";
 import { SERVICE_UUID, CHARACTERISTICS } from "./BLEConfig.js";
+import {
+  RawPayloadSchema,
+  HealthReadingSchema,
+  HealthMetricsSchema,
+  DeviceIdSchema,
+  DeviceObjectSchema,
+  Base64Schema,
+  CharacteristicUUIDSchema,
+} from "./BLEService.schema.js";
 
 class BLEService {
   constructor() {
@@ -83,6 +92,13 @@ class BLEService {
   // since it calls device.connect() directly.
   // ==========================
   async connect(device) {
+    const parsed = DeviceObjectSchema.safeParse(device);
+    if (!parsed.success) {
+      throw new Error(
+        `connect() expects a scanned device object with a connect() method: ${parsed.error.message}`
+      );
+    }
+
     this.stopScan();
 
     this.device = await device.connect();
@@ -98,7 +114,12 @@ class BLEService {
   // object, since there's no live scan result to call .connect() on.
   // ==========================
   async autoConnect(deviceId) {
-    this.device = await this.manager.connectToDevice(deviceId);
+    const parsed = DeviceIdSchema.safeParse(deviceId);
+    if (!parsed.success) {
+      throw new Error(`autoConnect() invalid deviceId: ${parsed.error.message}`);
+    }
+
+    this.device = await this.manager.connectToDevice(parsed.data);
 
     await this.device.discoverAllServicesAndCharacteristics();
 
@@ -133,67 +154,115 @@ class BLEService {
   }
 
   // ==========================
-  // Listen Data
+  // Health Metrics
   // FIX: remove any existing subscription before creating a new one,
-  // otherwise calling monitorData() twice leaks the old listener.
+  // otherwise calling monitorHealthMetrics() twice leaks the old listener.
+  // Zod (schemas live in BLEService.schema.js) validates the raw
+  // payload shape and the numeric ranges before any unit conversion
+  // or derived math runs, so a malformed or out-of-range packet from
+  // the wearable surfaces as a clear validation error instead of
+  // silently producing NaN/garbage stats.
   // ==========================
-monitorData(callback) {
-  if (!this.device) return;
+  monitorHealthMetrics(callback) {
+    if (!this.device) return;
 
-  if (this.subscription) {
-    this.subscription.remove();
-    this.subscription = null;
-  }
-
-  this.subscription = this.device.monitorCharacteristicForService(
-    SERVICE_UUID,
-    CHARACTERISTICS.data,
-    (error, characteristic) => {
-      if (error) {
-        callback(error, null);
-        return;
-      }
-
-      if (!characteristic?.value) return;
-
-      const value = atob(characteristic.value).trim();
-
-      try {
-        const [hr, spo2, tempC, battery, steps] = value
-          .split("/")
-          .map(Number);
-
-        // Temperature
-        const tempK = +(tempC + 273.15).toFixed(2);
-        const tempF = +(tempC * 9 / 5 + 32).toFixed(2);
-
-        // Calories (Approximation)
-        // ~0.04 kcal per step
-        const calories = +(steps * 0.04).toFixed(2);
-
-        // Distance (Approximation)
-        // Average stride length = 0.75m
-        const distance = +((steps * 0.75) / 1000).toFixed(2);
-
-        const payload = [
-          hr,
-          spo2,
-          tempC,
-          tempK,
-          tempF,
-          battery,
-          steps,
-          calories,
-          distance,
-        ].join("/");
-
-        callback(null, payload);
-      } catch (err) {
-        callback(new Error("Invalid BLE payload"), null);
-      }
+    if (this.subscription) {
+      this.subscription.remove();
+      this.subscription = null;
     }
-  );
-}
+
+    this.subscription = this.device.monitorCharacteristicForService(
+      SERVICE_UUID,
+      CHARACTERISTICS.data,
+      (error, characteristic) => {
+        if (error) {
+          callback(error, null);
+          return;
+        }
+
+        if (!characteristic?.value) return;
+
+        try {
+          const raw = atob(characteristic.value).trim();
+
+          // Expected BLE payload:
+          // HR,SPO2,TEMP_C,BATTERY,STEPS
+          // Example: 72,98,36.5,85,5234
+
+          const rawResult = RawPayloadSchema.safeParse(raw);
+          if (!rawResult.success) {
+            callback(
+              new Error(`Invalid BLE payload "${raw}": ${rawResult.error.message}`),
+              null
+            );
+            return;
+          }
+
+          const parts = rawResult.data.split(",");
+          const [hr, spo2, tempC, battery, steps] = parts.map(Number);
+
+          const readingResult = HealthReadingSchema.safeParse({
+            hr,
+            spo2,
+            tempC,
+            battery,
+            steps,
+          });
+
+          if (!readingResult.success) {
+            callback(
+              new Error(`BLE payload out of range "${raw}": ${readingResult.error.message}`),
+              null
+            );
+            return;
+          }
+
+          const {
+            hr: validHr,
+            spo2: validSpo2,
+            tempC: validTempC,
+            battery: validBattery,
+            steps: validSteps,
+          } = readingResult.data;
+
+          const tempF = Number(((validTempC * 9) / 5 + 32).toFixed(2));
+          const tempK = Number((validTempC + 273.15).toFixed(2));
+
+          // Approximate calculations
+          const calories = Number((validSteps * 0.04).toFixed(2));
+          const distance = Number(((validSteps * 0.75) / 1000).toFixed(2));
+
+          const healthMetrics = {
+            heartRate: validHr,
+            spo2: validSpo2,
+            temperature: {
+              celsius: validTempC,
+              fahrenheit: tempF,
+              kelvin: tempK,
+            },
+            battery: validBattery,
+            steps: validSteps,
+            calories,
+            distance, // km
+            raw,
+          };
+
+          const outputResult = HealthMetricsSchema.safeParse(healthMetrics);
+          if (!outputResult.success) {
+            callback(
+              new Error(`Failed to build healthMetrics object: ${outputResult.error.message}`),
+              null
+            );
+            return;
+          }
+
+          callback(null, outputResult.data);
+        } catch (err) {
+          callback(err, null);
+        }
+      }
+    );
+  }
 
   stopMonitoring() {
     if (this.subscription) {
@@ -212,17 +281,27 @@ monitorData(callback) {
   async sendCommand(base64Command, characteristicUUID = CHARACTERISTICS.reset) {
     if (!this.device) throw new Error("No Device Connected");
 
+    const commandResult = Base64Schema.safeParse(base64Command);
+    if (!commandResult.success) {
+      throw new Error(`sendCommand() invalid base64Command: ${commandResult.error.message}`);
+    }
+
+    const uuidResult = CharacteristicUUIDSchema.safeParse(characteristicUUID);
+    if (!uuidResult.success) {
+      throw new Error(`sendCommand() invalid characteristicUUID: ${uuidResult.error.message}`);
+    }
+
     try {
       return await this.device.writeCharacteristicWithResponseForService(
         SERVICE_UUID,
-        characteristicUUID,
-        base64Command
+        uuidResult.data,
+        commandResult.data
       );
     } catch {
       return await this.device.writeCharacteristicWithoutResponseForService(
         SERVICE_UUID,
-        characteristicUUID,
-        base64Command
+        uuidResult.data,
+        commandResult.data
       );
     }
   }
@@ -233,9 +312,14 @@ monitorData(callback) {
   async read(uuid) {
     if (!this.device) return null;
 
+    const uuidResult = CharacteristicUUIDSchema.safeParse(uuid);
+    if (!uuidResult.success) {
+      throw new Error(`read() invalid uuid: ${uuidResult.error.message}`);
+    }
+
     const value = await this.device.readCharacteristicForService(
       SERVICE_UUID,
-      uuid
+      uuidResult.data
     );
 
     return value;
