@@ -1,5 +1,5 @@
 import BLE from "./src/BLEService";
-import { sendTelegramMessage } from "./src/handlelogs";
+export { initializeAppLogger,consoleApp } from "./src/handlelogs";
 
 export { checkForOTAUpdates } from "./src/update";
 
@@ -68,11 +68,3 @@ export const unpair = async () => {
   return true;
 };
 
-export const applog = async (message) => {
-  try {
-    const response = await sendTelegramMessage(message);
-    return response;
-  } catch (error) {
-    return { error: error.message || "Failed to send log message" };
-  }
-};
