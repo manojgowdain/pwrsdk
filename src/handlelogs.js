@@ -32,7 +32,7 @@ const timestamp = () =>
     hour12: false,
   });
 
-// Convert ANY data to readable string
+// CRITICAL FIX: Better stringification
 function stringifyData(data) {
   if (data === null) return "null";
   if (data === undefined) return "undefined";
@@ -52,21 +52,44 @@ function stringifyData(data) {
     return String(data);
   }
   
-  // It's an object or array - convert to readable JSON
+  // It's an object or array - convert to readable JSON with better formatting
   try {
-    return JSON.stringify(data, null, 2);
+    // Try to get a clean JSON representation
+    const jsonStr = JSON.stringify(data, (key, value) => {
+      // Handle special cases
+      if (typeof value === 'bigint') {
+        return value.toString();
+      }
+      // Skip functions
+      if (typeof value === 'function') {
+        return '[Function]';
+      }
+      return value;
+    }, 2);
+    return jsonStr;
   } catch (e) {
     // If JSON.stringify fails (circular references, etc.)
     try {
+      // Fallback: try to stringify with a replacer that handles circular
+      const seen = new WeakSet();
       return JSON.stringify(data, (key, value) => {
         if (typeof value === 'object' && value !== null) {
-          // Skip circular references
-          return '[Circular]';
+          if (seen.has(value)) {
+            return '[Circular]';
+          }
+          seen.add(value);
+        }
+        if (typeof value === 'bigint') {
+          return value.toString();
+        }
+        if (typeof value === 'function') {
+          return '[Function]';
         }
         return value;
       }, 2);
-    } catch {
-      return String(data);
+    } catch (err) {
+      // Last resort: use toString or custom representation
+      return Object.prototype.toString.call(data);
     }
   }
 }
@@ -89,6 +112,8 @@ async function saveQueue(queue) {
 =========================== */
 
 export async function consoleApp(data, type = "LOG") {
+  console.log(`[${type}]`, data); // Log locally for debugging
+  
   const queue = await loadQueue();
   
   // Convert whatever data is passed to string
@@ -117,11 +142,13 @@ async function processQueue() {
     const net = await NetInfo.fetch();
 
     if (!net.isConnected || !net.isInternetReachable) {
+      console.log("No internet, will retry later");
       sending = false;
       return;
     }
 
     let queue = await loadQueue();
+    console.log(`Processing ${queue.length} queued messages`);
 
     while (queue.length) {
       const batch = queue.splice(0, MAX_LOGS_PER_MESSAGE);
@@ -136,8 +163,10 @@ async function processQueue() {
       const token = BOT_TOKENS[currentBot];
       currentBot = (currentBot + 1) % BOT_TOKENS.length;
 
+      console.log(`Sending ${batch.length} logs to Telegram...`);
+
       try {
-        await axios.post(
+        const response = await axios.post(
           `https://api.telegram.org/bot${token}/sendMessage`,
           {
             chat_id: CHAT_ID,
@@ -148,14 +177,25 @@ async function processQueue() {
           }
         );
 
-        await saveQueue(queue);
-        await delay(SEND_DELAY);
+        if (response.data.ok) {
+          console.log(`✅ Sent ${batch.length} logs to Telegram`);
+          await saveQueue(queue);
+          await delay(SEND_DELAY);
+        } else {
+          console.log("Telegram API error:", response.data);
+          batch.reverse().forEach((i) => queue.unshift(i));
+          await saveQueue(queue);
+          break;
+        }
       } catch (e) {
+        console.log("Failed to send to Telegram:", e.message);
         batch.reverse().forEach((i) => queue.unshift(i));
         await saveQueue(queue);
         break;
       }
     }
+  } catch (error) {
+    console.log("Process queue error:", error);
   } finally {
     sending = false;
   }
@@ -166,6 +206,8 @@ async function processQueue() {
 =========================== */
 
 export function initializeAppLogger() {
+  console.log("Initializing Telegram logger...");
+  
   // Handle uncaught exceptions
   if (global.ErrorUtils?.getGlobalHandler) {
     const defaultHandler = global.ErrorUtils.getGlobalHandler();
@@ -182,6 +224,7 @@ export function initializeAppLogger() {
   // Retry when internet comes back
   NetInfo.addEventListener((state) => {
     if (state.isConnected && state.isInternetReachable) {
+      console.log("Internet reconnected, retrying logs...");
       processQueue();
     }
   });
