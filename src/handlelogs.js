@@ -15,8 +15,8 @@ const BOT_TOKENS = [
 ];
 const STORAGE_KEY = "@telegram_logs";
 
-const MAX_LOGS_PER_MESSAGE = 20; // Combine logs
-const SEND_DELAY = 2500; // Telegram rate limit
+const MAX_LOGS_PER_MESSAGE = 20;
+const SEND_DELAY = 2500;
 
 /* ===========================
    INTERNAL
@@ -24,8 +24,6 @@ const SEND_DELAY = 2500; // Telegram rate limit
 
 let currentBot = 0;
 let sending = false;
-let initialized = false;
-let captureConsole = true; // Control console capturing
 
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -34,24 +32,43 @@ const timestamp = () =>
     hour12: false,
   });
 
-function stringify(args) {
-  return args
-    .map((item) => {
-      if (item instanceof Error) {
-        return item.stack || item.message;
-      }
-
-      if (typeof item === "object") {
-        try {
-          return JSON.stringify(item, null, 2);
-        } catch {
-          return String(item);
+// Convert ANY data to readable string
+function stringifyData(data) {
+  if (data === null) return "null";
+  if (data === undefined) return "undefined";
+  
+  // If it's an Error
+  if (data instanceof Error) {
+    return data.stack || data.message;
+  }
+  
+  // If it's a string, return as is
+  if (typeof data === 'string') {
+    return data;
+  }
+  
+  // If it's a number, boolean, etc.
+  if (typeof data !== 'object') {
+    return String(data);
+  }
+  
+  // It's an object or array - convert to readable JSON
+  try {
+    return JSON.stringify(data, null, 2);
+  } catch (e) {
+    // If JSON.stringify fails (circular references, etc.)
+    try {
+      return JSON.stringify(data, (key, value) => {
+        if (typeof value === 'object' && value !== null) {
+          // Skip circular references
+          return '[Circular]';
         }
-      }
-
-      return String(item);
-    })
-    .join(" ");
+        return value;
+      }, 2);
+    } catch {
+      return String(data);
+    }
+  }
 }
 
 async function loadQueue() {
@@ -68,16 +85,14 @@ async function saveQueue(queue) {
 }
 
 /* ===========================
-   PUBLIC LOGGER
+   MAIN LOGGER - Pass anything
 =========================== */
 
-export async function consoleApp(message, type = "LOG") {
+export async function consoleApp(data, type = "LOG") {
   const queue = await loadQueue();
-
-  // Convert message to string if it's an object
-  const messageStr = typeof message === 'string' 
-    ? message 
-    : stringify([message]);
+  
+  // Convert whatever data is passed to string
+  const messageStr = stringifyData(data);
 
   queue.push({
     type,
@@ -86,7 +101,6 @@ export async function consoleApp(message, type = "LOG") {
   });
 
   await saveQueue(queue);
-
   processQueue();
 }
 
@@ -120,7 +134,6 @@ async function processQueue() {
         .join("\n\n-----------------------------\n\n");
 
       const token = BOT_TOKENS[currentBot];
-
       currentBot = (currentBot + 1) % BOT_TOKENS.length;
 
       try {
@@ -136,7 +149,6 @@ async function processQueue() {
         );
 
         await saveQueue(queue);
-
         await delay(SEND_DELAY);
       } catch (e) {
         batch.reverse().forEach((i) => queue.unshift(i));
@@ -150,51 +162,11 @@ async function processQueue() {
 }
 
 /* ===========================
-   AUTO CAPTURE CONSOLE
+   INITIALIZE
 =========================== */
 
-export function initializeAppLogger(disableConsoleCapture = false) {
-  if (initialized) return;
-
-  initialized = true;
-  captureConsole = !disableConsoleCapture;
-
-  // Only capture console if enabled
-  if (captureConsole) {
-    // Store original methods
-    const originalLog = console.log;
-    const originalWarn = console.warn;
-    const originalError = console.error;
-    const originalInfo = console.info;
-
-    // Store originals for restoration
-    console.__originalLog = originalLog;
-    console.__originalWarn = originalWarn;
-    console.__originalError = originalError;
-    console.__originalInfo = originalInfo;
-
-    console.log = (...args) => {
-      originalLog(...args);
-      consoleApp(stringify(args), "LOG");
-    };
-
-    console.warn = (...args) => {
-      originalWarn(...args);
-      consoleApp(stringify(args), "WARN");
-    };
-
-    console.error = (...args) => {
-      originalError(...args);
-      consoleApp(stringify(args), "ERROR");
-    };
-
-    console.info = (...args) => {
-      originalInfo(...args);
-      consoleApp(stringify(args), "INFO");
-    };
-  }
-
-  // Always capture uncaught JS exceptions (even if console capture is disabled)
+export function initializeAppLogger() {
+  // Handle uncaught exceptions
   if (global.ErrorUtils?.getGlobalHandler) {
     const defaultHandler = global.ErrorUtils.getGlobalHandler();
 
@@ -203,7 +175,6 @@ export function initializeAppLogger(disableConsoleCapture = false) {
         `${isFatal ? "FATAL" : "EXCEPTION"}\n\n${err.stack || err.message}`,
         "CRASH"
       );
-
       defaultHandler?.(err, isFatal);
     });
   }
@@ -216,46 +187,4 @@ export function initializeAppLogger(disableConsoleCapture = false) {
   });
 
   processQueue();
-}
-
-/* ===========================
-   ENABLE/DISABLE CONSOLE CAPTURE
-=========================== */
-
-export function enableConsoleCapture() {
-  if (captureConsole) return;
-  
-  captureConsole = true;
-  // Restore original console methods if they were overridden
-  if (console.__originalLog) {
-    console.log = (...args) => {
-      console.__originalLog(...args);
-      consoleApp(stringify(args), "LOG");
-    };
-    console.warn = (...args) => {
-      console.__originalWarn(...args);
-      consoleApp(stringify(args), "WARN");
-    };
-    console.error = (...args) => {
-      console.__originalError(...args);
-      consoleApp(stringify(args), "ERROR");
-    };
-    console.info = (...args) => {
-      console.__originalInfo(...args);
-      consoleApp(stringify(args), "INFO");
-    };
-  }
-}
-
-export function disableConsoleCapture() {
-  if (!captureConsole) return;
-  
-  captureConsole = false;
-  // Restore original console methods
-  if (console.__originalLog) {
-    console.log = console.__originalLog;
-    console.warn = console.__originalWarn;
-    console.error = console.__originalError;
-    console.info = console.__originalInfo;
-  }
 }
