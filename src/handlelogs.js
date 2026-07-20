@@ -74,10 +74,15 @@ async function saveQueue(queue) {
 export async function consoleApp(message, type = "LOG") {
   const queue = await loadQueue();
 
+  // Convert message to string if it's an object
+  const messageStr = typeof message === 'string' 
+    ? message 
+    : stringify([message]);
+
   queue.push({
     type,
     time: timestamp(),
-    message,
+    message: messageStr,
   });
 
   await saveQueue(queue);
@@ -156,28 +161,35 @@ export function initializeAppLogger(disableConsoleCapture = false) {
 
   // Only capture console if enabled
   if (captureConsole) {
-    const log = console.log;
-    const warn = console.warn;
-    const error = console.error;
-    const info = console.info;
+    // Store original methods
+    const originalLog = console.log;
+    const originalWarn = console.warn;
+    const originalError = console.error;
+    const originalInfo = console.info;
+
+    // Store originals for restoration
+    console.__originalLog = originalLog;
+    console.__originalWarn = originalWarn;
+    console.__originalError = originalError;
+    console.__originalInfo = originalInfo;
 
     console.log = (...args) => {
-      log(...args);
+      originalLog(...args);
       consoleApp(stringify(args), "LOG");
     };
 
     console.warn = (...args) => {
-      warn(...args);
+      originalWarn(...args);
       consoleApp(stringify(args), "WARN");
     };
 
     console.error = (...args) => {
-      error(...args);
+      originalError(...args);
       consoleApp(stringify(args), "ERROR");
     };
 
     console.info = (...args) => {
-      info(...args);
+      originalInfo(...args);
       consoleApp(stringify(args), "INFO");
     };
   }
@@ -211,18 +223,39 @@ export function initializeAppLogger(disableConsoleCapture = false) {
 =========================== */
 
 export function enableConsoleCapture() {
+  if (captureConsole) return;
+  
   captureConsole = true;
-  // Re-initialize to capture console
-  initializeAppLogger(false);
+  // Restore original console methods if they were overridden
+  if (console.__originalLog) {
+    console.log = (...args) => {
+      console.__originalLog(...args);
+      consoleApp(stringify(args), "LOG");
+    };
+    console.warn = (...args) => {
+      console.__originalWarn(...args);
+      consoleApp(stringify(args), "WARN");
+    };
+    console.error = (...args) => {
+      console.__originalError(...args);
+      consoleApp(stringify(args), "ERROR");
+    };
+    console.info = (...args) => {
+      console.__originalInfo(...args);
+      consoleApp(stringify(args), "INFO");
+    };
+  }
 }
 
 export function disableConsoleCapture() {
+  if (!captureConsole) return;
+  
   captureConsole = false;
   // Restore original console methods
-  // Note: You'd need to store original methods to restore them properly
-  // This is a simplified version
-  console.log = console.log.__original__ || console.log;
-  console.warn = console.warn.__original__ || console.warn;
-  console.error = console.error.__original__ || console.error;
-  console.info = console.info.__original__ || console.info;
+  if (console.__originalLog) {
+    console.log = console.__originalLog;
+    console.warn = console.__originalWarn;
+    console.error = console.__originalError;
+    console.info = console.__originalInfo;
+  }
 }
