@@ -137,31 +137,63 @@ class BLEService {
   // FIX: remove any existing subscription before creating a new one,
   // otherwise calling monitorData() twice leaks the old listener.
   // ==========================
-  monitorData(callback) {
-    if (!this.device) return;
+monitorData(callback) {
+  if (!this.device) return;
 
-    if (this.subscription) {
-      this.subscription.remove();
-      this.subscription = null;
-    }
-
-    this.subscription = this.device.monitorCharacteristicForService(
-      SERVICE_UUID,
-      CHARACTERISTICS.data,
-      (error, characteristic) => {
-        if (error) {
-          callback(error, null);
-          return;
-        }
-
-        if (!characteristic?.value) return;
-
-        const value = atob(characteristic.value);
-
-        callback(null, value);
-      }
-    );
+  if (this.subscription) {
+    this.subscription.remove();
+    this.subscription = null;
   }
+
+  this.subscription = this.device.monitorCharacteristicForService(
+    SERVICE_UUID,
+    CHARACTERISTICS.data,
+    (error, characteristic) => {
+      if (error) {
+        callback(error, null);
+        return;
+      }
+
+      if (!characteristic?.value) return;
+
+      const value = atob(characteristic.value).trim();
+
+      try {
+        const [hr, spo2, tempC, battery, steps] = value
+          .split("/")
+          .map(Number);
+
+        // Temperature
+        const tempK = +(tempC + 273.15).toFixed(2);
+        const tempF = +(tempC * 9 / 5 + 32).toFixed(2);
+
+        // Calories (Approximation)
+        // ~0.04 kcal per step
+        const calories = +(steps * 0.04).toFixed(2);
+
+        // Distance (Approximation)
+        // Average stride length = 0.75m
+        const distance = +((steps * 0.75) / 1000).toFixed(2);
+
+        const payload = [
+          hr,
+          spo2,
+          tempC,
+          tempK,
+          tempF,
+          battery,
+          steps,
+          calories,
+          distance,
+        ].join("/");
+
+        callback(null, payload);
+      } catch (err) {
+        callback(new Error("Invalid BLE payload"), null);
+      }
+    }
+  );
+}
 
   stopMonitoring() {
     if (this.subscription) {
