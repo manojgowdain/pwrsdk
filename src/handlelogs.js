@@ -179,7 +179,7 @@ async function processQueue() {
     await checkOnlineStatus();
     
     if (!isOnline) {
-      console.log(`[QUEUE] Offline - ${queue.pending.length} items waiting`);
+      // console.log(`[QUEUE] Offline - ${queue.pending.length} items waiting`);
       isProcessing = false;
       setTimeout(processQueue, 10000);
       return;
@@ -197,17 +197,17 @@ async function processQueue() {
     const timestamp = new Date().toLocaleString("en-IN", { hour12: false });
     const formattedMessage = `[${timestamp}]\n${item.message}`;
     
-    console.log(`[QUEUE] Sending (${item.attempts + 1}/${item.maxAttempts})...`);
+    // console.log(`[QUEUE] Sending (${item.attempts + 1}/${item.maxAttempts})...`);
     
     const success = await sendToTelegram(formattedMessage);
     
     if (success) {
       queue.markSent(item.id);
       lastSendTime = Date.now();
-      console.log(`[QUEUE] ✅ Sent`);
+      // console.log(`[QUEUE] ✅ Sent`);
     } else {
       queue.markFailed(item.id, 'Telegram API error');
-      console.log(`[QUEUE] ❌ Failed (attempt ${item.attempts}/${item.maxAttempts})`);
+      // console.log(`[QUEUE] ❌ Failed (attempt ${item.attempts}/${item.maxAttempts})`);
     }
   } catch (error) {
     console.error('[QUEUE] Error:', error);
@@ -234,14 +234,14 @@ export async function consoleApp(...args) {
   }).join(' ');
 
   // Also log to console
-  console.log(message);
+  // console.log(message);
 
   // Check online status
   await checkOnlineStatus();
   
   // Add to queue
   queue.add(message);
-  console.log(`[QUEUE] Added (${queue.stats.pending} pending)`);
+  // console.log(`[QUEUE] Added (${queue.stats.pending} pending)`);
   
   // Process queue if online
   if (isOnline) {
@@ -276,7 +276,7 @@ export function initializeLogger() {
   // Auto retry failed items
   setInterval(() => {
     if (isOnline && queue.failed.length > 0) {
-      console.log(`[AUTO] Retrying ${queue.failed.length} failed items...`);
+      // console.log(`[AUTO] Retrying ${queue.failed.length} failed items...`);
       queue.retryFailed();
       processQueue();
     }
@@ -288,7 +288,7 @@ export function initializeLogger() {
     isOnline = state.isConnected && state.isInternetReachable;
     
     if (isOnline !== wasOnline) {
-      console.log(`📡 Status changed to: ${isOnline ? 'ONLINE' : 'OFFLINE'}`);
+      // console.log(`📡 Status changed to: ${isOnline ? 'ONLINE' : 'OFFLINE'}`);
       
       if (isOnline) {
         consoleApp('🟢 Device is now ONLINE');
@@ -300,7 +300,7 @@ export function initializeLogger() {
   });
   
   // Initial status
-  console.log(`📱 Logger initialized - Status: ${isOnline ? 'ONLINE' : 'OFFLINE'}`);
+  // console.log(`📱 Logger initialized - Status: ${isOnline ? 'ONLINE' : 'OFFLINE'}`);
   consoleApp('📱 Logger initialized');
   
   return { consoleApp, getCurrentStatus };

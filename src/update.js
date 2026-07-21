@@ -1,39 +1,40 @@
 import * as Updates from "expo-updates";
+import {consoleApp} from "./handlelogs";
 
 export async function checkForOTAUpdates() {
   // Development Build / Expo Go
   if (__DEV__) {
-    console.log("Skipping OTA check (development mode)");
+    consoleApp("Skipping OTA check (development mode)");
     return;
   }
 
   // Development Client
   if (Updates.isEmbeddedLaunch) {
-    console.log("Embedded launch");
+    consoleApp("Embedded launch");
   }
 
   try {
-    console.log("==================================");
-    console.log("Checking for OTA Updates...");
-    console.log("Channel:", Updates.channel);
-    console.log("Runtime Version:", Updates.runtimeVersion);
-    console.log("Update ID:", Updates.updateId);
-    console.log("==================================");
+    consoleApp("==================================");
+    consoleApp("Checking for OTA Updates...");
+    consoleApp("Channel: " + Updates.channel);
+    consoleApp("Runtime Version: " + Updates.runtimeVersion);
+    consoleApp("Update ID: " + Updates.updateId);
+    consoleApp("==================================");
 
     const update = await Updates.checkForUpdateAsync();
 
     if (update.isAvailable) {
-      console.log("New OTA update available");
+      consoleApp("New OTA update available");
 
       await Updates.fetchUpdateAsync();
 
-      console.log("Reloading...");
+      consoleApp("Reloading...");
 
       await Updates.reloadAsync();
     } else {
-      console.log("Already up to date");
+      consoleApp("Already up to date");
     }
   } catch (e) {
-    console.error("OTA Update Error:", e);
+    consoleApp("OTA Update Error: " + e);
   }
 }
