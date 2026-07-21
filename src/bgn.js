@@ -27,7 +27,7 @@ ExpoNotifications.setNotificationHandler({
 if (isExpo) {
   TaskManager.defineTask(BACKGROUND_FETCH_TASK, async () => {
     try {
-      const isRunning = await backgroundServiceSDK.isRunning();
+      const isRunning = await backgroundServiceSDK.checkIsRunning();
       if (isRunning) {
         await backgroundServiceSDK.executeBackgroundTask();
         return BackgroundFetch.BackgroundFetchResult.NewData;
@@ -146,7 +146,6 @@ class BackgroundServiceSDK {
    * Setup Expo notifications
    */
   setupExpoNotifications() {
-    // Listen for notifications
     this.notificationListener = ExpoNotifications.addNotificationReceivedListener(
       (notification) => {
         if (this.callbacks.onNotification) {
@@ -188,7 +187,6 @@ class BackgroundServiceSDK {
    * Setup react-native-push-notification
    */
   setupRNPushNotification() {
-    // This would be the setup for react-native-push-notification
     console.log('RN Push Notification setup');
   }
 
@@ -223,18 +221,14 @@ class BackgroundServiceSDK {
   async requestNotificationPermissions() {
     try {
       if (!isExpo) {
-        // For React Native CLI with react-native-push-notification
         if (Platform.OS === 'android') {
           console.log('Android notification permissions are configured in manifest');
           return true;
         }
-
-        // iOS - request permissions using react-native-push-notification
         console.log('Requesting iOS notification permissions');
         return true;
       }
 
-      // Expo implementation
       if (!Device.isDevice) {
         console.log('Not a device, skipping permissions');
         return false;
@@ -266,7 +260,6 @@ class BackgroundServiceSDK {
           ]
         );
       } else {
-        // Setup Android channels
         if (Platform.OS === 'android') {
           await this.setupAndroidNotificationChannels();
         }
@@ -285,28 +278,20 @@ class BackgroundServiceSDK {
   async requestBackgroundPermissions() {
     try {
       if (!isExpo) {
-        // React Native CLI with react-native-background-actions
-        // The permissions are handled in the manifest
         console.log('Background permissions configured in app manifest');
 
-        // For Android, check if we have the necessary permissions
         if (Platform.OS === 'android') {
           console.log('Android background permissions are configured in AndroidManifest.xml');
           return true;
         }
 
-        // For iOS, Background Tasks capability needs to be enabled
         if (Platform.OS === 'ios') {
           console.log('iOS background permissions require Background Modes capability');
-          // You might want to check if background refresh is enabled
         }
         return true;
       }
 
-      // Expo implementation
       let permissionsGranted = true;
-
-      // Check background fetch permissions
       const status = await BackgroundFetch.getStatusAsync();
 
       if (status === BackgroundFetch.BackgroundFetchStatus.Denied) {
@@ -328,7 +313,6 @@ class BackgroundServiceSDK {
         permissionsGranted = false;
       }
 
-      // Register background task if permissions are available
       if (permissionsGranted) {
         try {
           await BackgroundFetch.registerTaskAsync(BACKGROUND_FETCH_TASK, {
@@ -364,13 +348,9 @@ class BackgroundServiceSDK {
     };
   }
 
-  /**
-   * Open app settings
-   */
   openAppSettings() {
     try {
       if (Platform.OS === 'ios') {
-        // For iOS, use Linking API
         const { Linking } = require('react-native');
         Linking.openURL('app-settings:');
       } else if (Platform.OS === 'android') {
@@ -382,9 +362,6 @@ class BackgroundServiceSDK {
     }
   }
 
-  /**
-   * Setup Android notification channels
-   */
   async setupAndroidNotificationChannels() {
     try {
       await ExpoNotifications.setNotificationChannelAsync('default', {
@@ -434,9 +411,6 @@ class BackgroundServiceSDK {
     }
   }
 
-  /**
-   * Request permissions for Expo
-   */
   async requestExpoPermissions() {
     if (!Device.isDevice) {
       console.log('Not a device, skipping permissions');
@@ -462,7 +436,6 @@ class BackgroundServiceSDK {
       return false;
     }
 
-    // Setup Android channels
     if (Platform.OS === 'android') {
       await this.setupAndroidNotificationChannels();
     }
@@ -499,10 +472,14 @@ class BackgroundServiceSDK {
       disableAutoStart: false,
       isSilent: false,
       autoRestart: true,
+      // Android 14+ requires this to match android:foregroundServiceType
+      // declared for RNBackgroundActionsTask in AndroidManifest.xml.
+      // Only newer versions of react-native-background-actions read this
+      // JS option — the manifest declaration is what actually matters.
+      foregroundServiceType: ['connectedDevice'],
       ...options,
     };
 
-    // Create the background task wrapper
     const backgroundTask = async (taskData) => {
       try {
         this.backgroundTaskRunning = true;
@@ -513,10 +490,8 @@ class BackgroundServiceSDK {
           this.callbacks.onTaskStart(taskData);
         }
 
-        // Execute the user's task
         await taskFunction(taskData);
 
-        // Update progress notification
         if (taskData.progress !== undefined) {
           this.updateProgressNotification(
             taskData.progress,
@@ -529,7 +504,6 @@ class BackgroundServiceSDK {
           this.callbacks.onTaskProgress(taskData);
         }
 
-        // Update persistent notification
         this.updatePersistentNotification(
           `🔄 ${options.taskTitle}`,
           `Running for ${this.getUptime()} | Executions: ${this.executionCount}`,
@@ -551,7 +525,6 @@ class BackgroundServiceSDK {
     };
 
     if (!isExpo) {
-      // React Native CLI - use react-native-background-actions
       const taskOptions = {
         taskName: defaultOptions.taskName,
         taskTitle: defaultOptions.taskTitle,
@@ -566,16 +539,28 @@ class BackgroundServiceSDK {
         autoRestart: defaultOptions.autoRestart,
         stopWithApp: defaultOptions.stopWithApp,
         disableAutoStart: defaultOptions.disableAutoStart,
+        foregroundServiceType: defaultOptions.foregroundServiceType,
         ...options,
       };
 
       this.task = backgroundTask;
       this.taskOptions = taskOptions;
 
-      await BackgroundService.start(backgroundTask, taskOptions);
-      this.isRunning = true;
+      try {
+        await BackgroundService.start(backgroundTask, taskOptions);
+        this.isRunning = true;
+      } catch (error) {
+        // Without the manifest's foregroundServiceType declared, this
+        // throws/crashes on Android 14+. Catch it so it doesn't take
+        // down the whole app while you're getting the manifest right.
+        console.error('Failed to start background service:', error);
+        this.isRunning = false;
+        if (this.callbacks.onError) {
+          this.callbacks.onError(error);
+        }
+        return false;
+      }
 
-      // Show persistent notification
       this.showPersistentNotification(
         `🟢 ${defaultOptions.taskTitle}`,
         `Service started - ${this.getUptime()}`,
@@ -591,8 +576,6 @@ class BackgroundServiceSDK {
         }
       );
     } else {
-      // Expo - use BackgroundFetch and TaskManager
-      // Register the task
       TaskManager.defineTask(BACKGROUND_TASK_NAME, async ({ data, error }) => {
         if (error) {
           console.error('Task error:', error);
@@ -606,16 +589,14 @@ class BackgroundServiceSDK {
         }
       });
 
-      // Register the task with a minimum interval
       await BackgroundFetch.registerTaskAsync(BACKGROUND_TASK_NAME, {
-        minimumInterval: options.interval ? options.interval / 1000 : 60, // in seconds
+        minimumInterval: options.interval ? options.interval / 1000 : 60,
         stopOnTerminate: false,
         startOnBoot: true,
       });
 
       this.isRunning = true;
 
-      // Show persistent notification for Expo (mimicking)
       this.showPersistentNotification(
         `🟢 ${defaultOptions.taskTitle}`,
         `Service started (Expo) - ${this.getUptime()}`,
@@ -643,7 +624,6 @@ class BackgroundServiceSDK {
       this.lastExecutionTime = Date.now();
       this.executionCount++;
 
-      // Execute the task if defined
       if (this.task) {
         await this.task({ executionCount: this.executionCount });
       }
@@ -670,10 +650,8 @@ class BackgroundServiceSDK {
       this.isRunning = false;
       this.backgroundTaskRunning = false;
 
-      // Remove persistent notification
       this.removePersistentNotification();
 
-      // Show stopped notification
       this.showNotification(
         '⏹️ Service Stopped',
         'Background service has been stopped',
@@ -700,9 +678,6 @@ class BackgroundServiceSDK {
     }
   }
 
-  /**
-   * Show a regular notification
-   */
   async showNotification(title, body, options = {}) {
     try {
       const notificationContent = {
@@ -720,7 +695,6 @@ class BackgroundServiceSDK {
           trigger: options.trigger || null,
         });
       } else {
-        // RN Push Notification implementation
         console.log('RN Push Notification:', { title, body, options });
         return this.notificationId++;
       }
@@ -733,9 +707,6 @@ class BackgroundServiceSDK {
     }
   }
 
-  /**
-   * Show a persistent notification (cannot be swiped away)
-   */
   async showPersistentNotification(title, body, options = {}) {
     try {
       const notificationContent = {
@@ -757,7 +728,6 @@ class BackgroundServiceSDK {
       let notificationId;
 
       if (isExpo) {
-        // Cancel previous persistent notification
         if (this.lastPersistentNotification) {
           await ExpoNotifications.cancelScheduledNotificationAsync(
             this.lastPersistentNotification
@@ -777,7 +747,6 @@ class BackgroundServiceSDK {
           options,
         };
       } else {
-        // RN Push Notification with ongoing flag
         notificationId = this.persistentNotificationId;
         console.log('RN Persistent Notification:', { title, body, options });
       }
@@ -792,20 +761,10 @@ class BackgroundServiceSDK {
     }
   }
 
-  /**
-   * Update persistent notification
-   */
   async updatePersistentNotification(title, body, options = {}) {
-    if (this.lastPersistentNotification) {
-      await this.showPersistentNotification(title, body, options);
-    } else {
-      await this.showPersistentNotification(title, body, options);
-    }
+    await this.showPersistentNotification(title, body, options);
   }
 
-  /**
-   * Update progress notification
-   */
   async updateProgressNotification(progress, title = 'Processing', message = 'Please wait...') {
     const progressBar = '█'.repeat(Math.floor(progress / 10)) + '░'.repeat(10 - Math.floor(progress / 10));
 
@@ -823,9 +782,6 @@ class BackgroundServiceSDK {
     );
   }
 
-  /**
-   * Send custom notification with full configuration
-   */
   async sendCustomNotification(title, body, options = {}) {
     try {
       const {
@@ -863,7 +819,6 @@ class BackgroundServiceSDK {
         threadIdentifier,
       };
 
-      // Platform-specific configurations
       if (Platform.OS === 'android') {
         notificationContent.android = {
           channelId: channelId || 'default',
@@ -935,9 +890,6 @@ class BackgroundServiceSDK {
     }
   }
 
-  /**
-   * Show alert notification (high priority)
-   */
   async showAlertNotification(title, body, options = {}) {
     return this.sendCustomNotification(title, body, {
       ...options,
@@ -949,9 +901,6 @@ class BackgroundServiceSDK {
     });
   }
 
-  /**
-   * Show silent notification
-   */
   async showSilentNotification(title, body, options = {}) {
     return this.sendCustomNotification(title, body, {
       ...options,
@@ -963,9 +912,6 @@ class BackgroundServiceSDK {
     });
   }
 
-  /**
-   * Schedule notification for later
-   */
   async scheduleNotification(title, body, delayMs = 60000, options = {}) {
     const trigger = {
       seconds: delayMs / 1000,
@@ -977,9 +923,6 @@ class BackgroundServiceSDK {
     });
   }
 
-  /**
-   * Cancel a specific notification
-   */
   async cancelNotification(notificationId) {
     try {
       if (isExpo) {
@@ -995,9 +938,6 @@ class BackgroundServiceSDK {
     }
   }
 
-  /**
-   * Cancel all notifications
-   */
   async cancelAllNotifications() {
     try {
       if (isExpo) {
@@ -1014,9 +954,6 @@ class BackgroundServiceSDK {
     }
   }
 
-  /**
-   * Remove persistent notification
-   */
   async removePersistentNotification() {
     if (this.lastPersistentNotification) {
       await this.cancelNotification(this.lastPersistentNotification);
@@ -1025,12 +962,8 @@ class BackgroundServiceSDK {
     }
   }
 
-  /**
-   * Handle notification actions
-   */
   handleNotificationAction(response) {
     const action = response.actionIdentifier;
-    const data = response.notification.request.content.data;
 
     if (action === 'STOP' || action === 'CANCEL') {
       this.stopBackgroundTask();
@@ -1043,9 +976,6 @@ class BackgroundServiceSDK {
     }
   }
 
-  /**
-   * Show status notification
-   */
   async showStatusNotification() {
     const status = this.getStatus();
     await this.showNotification(
@@ -1058,9 +988,6 @@ class BackgroundServiceSDK {
     );
   }
 
-  /**
-   * Get platform-specific notification options
-   */
   getPlatformSpecificNotification(options = {}) {
     const { persistent = false, priority = 'high', actions = [] } = options;
 
@@ -1109,9 +1036,6 @@ class BackgroundServiceSDK {
     return config;
   }
 
-  /**
-   * Map priority strings to Android constants
-   */
   getAndroidPriority(priority) {
     if (isExpo) {
       const priorityMap = {
@@ -1127,9 +1051,13 @@ class BackgroundServiceSDK {
   }
 
   /**
-   * Check if service is running
+   * Check if service is running.
+   * Renamed from `isRunning()` -> `checkIsRunning()`: the old name collided
+   * with the `this.isRunning` boolean property set in the constructor.
+   * Since own instance properties shadow prototype methods in JS, calling
+   * `this.isRunning()` anywhere would have thrown "not a function".
    */
-  async isRunning() {
+  async checkIsRunning() {
     if (!isExpo) {
       return this.isRunning || BackgroundService.isRunning();
     } else {
@@ -1138,9 +1066,6 @@ class BackgroundServiceSDK {
     }
   }
 
-  /**
-   * Get service status
-   */
   getStatus() {
     return {
       isRunning: this.isRunning,
@@ -1156,9 +1081,6 @@ class BackgroundServiceSDK {
     };
   }
 
-  /**
-   * Cleanup resources
-   */
   async cleanup() {
     if (this.isRunning) {
       await this.stopBackgroundTask();
@@ -1181,14 +1103,7 @@ class BackgroundServiceSDK {
   }
 }
 
-// Create and export singleton
 const backgroundServiceSDK = new BackgroundServiceSDK();
 
-// Named export (fixes barrel files/consumers doing:
-//   import { backgroundServiceSDK } from '../../services/blesdk/main';
-// A default-only export here becomes `undefined` when re-exported as a
-// named binding incorrectly in main.js, which is what was causing
-// "Cannot read property 'initialize' of undefined".
 export { backgroundServiceSDK };
-
 export default backgroundServiceSDK;
