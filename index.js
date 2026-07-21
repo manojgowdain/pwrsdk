@@ -1,5 +1,5 @@
 import BLE from "./src/BLEService";
-export { initializeAppLogger,consoleApp } from "./src/handlelogs";
+export { consoleApp, getCurrentStatus  } from "./src/handlelogs";
 
 export { checkForOTAUpdates } from "./src/update";
 
