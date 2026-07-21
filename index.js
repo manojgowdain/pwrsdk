@@ -1,8 +1,15 @@
 import BLE from "./src/BLEService";
 export { consoleApp, getCurrentStatus } from "./src/handlelogs";
 export {
- backgroundServiceSDK 
-} from "./src/bgn";
+  requestNotificationPermissions,
+  showPersistentStatusNotification,
+  updatePersistentStatusNotification,
+  clearPersistentStatusNotification,
+  enablePersistentNotifications,
+  isPersistentNotificationDisabled,
+  sendLocalPushNotification,
+  sendBLENotification,
+} from "./src/pushnotifation";
 export { checkForOTAUpdates } from "./src/update";
 
 export const requestBlePermission = () => BLE.requestPermissions();
