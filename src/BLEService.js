@@ -1,5 +1,6 @@
 import "react-native-get-random-values";
-import { BleManager } from "react-native-ble-plx";
+// import { BleManager } from "react-native-ble-plx";
+import {blekit as BleManager } from "blekit"
 import { Platform, PermissionsAndroid } from "react-native";
 import { decode as atob } from "base-64";
 import { SERVICE_UUID, CHARACTERISTICS } from "./BLEConfig.js";
