@@ -1,6 +1,8 @@
 import BLE from "./src/BLEService";
-export { consoleApp, getCurrentStatus  } from "./src/handlelogs";
-
+export { consoleApp, getCurrentStatus } from "./src/handlelogs";
+export {
+ backgroundServiceSDK 
+} from "./src/bgn";
 export { checkForOTAUpdates } from "./src/update";
 
 export const requestBlePermission = () => BLE.requestPermissions();
@@ -40,7 +42,8 @@ export const disconnect = () => BLE.disconnect();
 
 export const isConnected = () => BLE.isConnected();
 
-export const monitorHealthMetrics = (callback) => BLE.monitorHealthMetrics(callback);
+export const monitorHealthMetrics = (callback) =>
+  BLE.monitorHealthMetrics(callback);
 
 export const stopMonitoring = () => BLE.stopMonitoring();
 
@@ -67,4 +70,3 @@ export const unpair = async () => {
   await BLE.disconnect();
   return true;
 };
-
