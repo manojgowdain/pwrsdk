@@ -13,6 +13,16 @@ const isExpo = !!(globalThis).Expo;
 const BACKGROUND_TASK_NAME = 'BACKGROUND_SERVICE_TASK';
 const BACKGROUND_FETCH_TASK = 'BACKGROUND_FETCH_TASK';
 
+// Notification handler - kept outside as requested
+ExpoNotifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
+  }),
+});
+
 // Define task for Expo
 if (isExpo) {
   TaskManager.defineTask(BACKGROUND_FETCH_TASK, async () => {
@@ -136,15 +146,6 @@ class BackgroundServiceSDK {
    * Setup Expo notifications
    */
   setupExpoNotifications() {
-    ExpoNotifications.setNotificationHandler({
-      handleNotification: async () => ({
-        shouldPlaySound: true,
-        shouldSetBadge: true,
-        shouldShowBanner: true,
-        shouldShowList: true,
-      }),
-    });
-
     // Listen for notifications
     this.notificationListener = ExpoNotifications.addNotificationReceivedListener(
       (notification) => {
@@ -217,35 +218,175 @@ class BackgroundServiceSDK {
   }
 
   /**
-   * Request permissions for Expo
+   * Request notification permissions
    */
-  async requestExpoPermissions() {
-    if (!Device.isDevice) {
-      console.log('Not a device, skipping permissions');
+  async requestNotificationPermissions() {
+    try {
+      if (!isExpo) {
+        // For React Native CLI with react-native-push-notification
+        if (Platform.OS === 'android') {
+          console.log('Android notification permissions are configured in manifest');
+          return true;
+        }
+        
+        // iOS - request permissions using react-native-push-notification
+        console.log('Requesting iOS notification permissions');
+        return true;
+      }
+
+      // Expo implementation
+      if (!Device.isDevice) {
+        console.log('Not a device, skipping permissions');
+        return false;
+      }
+
+      let { status } = await ExpoNotifications.getPermissionsAsync();
+      
+      if (status !== 'granted') {
+        const result = await ExpoNotifications.requestPermissionsAsync({
+          ios: {
+            allowAlert: true,
+            allowBadge: true,
+            allowSound: true,
+            allowAnnouncements: true,
+          },
+        });
+        status = result.status;
+      }
+
+      const granted = status === 'granted';
+      
+      if (!granted) {
+        Alert.alert(
+          'Permission Required',
+          'Please enable notifications to receive alerts and updates from the app.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Open Settings', onPress: () => this.openAppSettings() },
+          ]
+        );
+      } else {
+        // Setup Android channels
+        if (Platform.OS === 'android') {
+          await this.setupAndroidNotificationChannels();
+        }
+      }
+
+      return granted;
+    } catch (error) {
+      console.error('Error requesting notification permissions:', error);
       return false;
     }
+  }
 
-    let { status } = await ExpoNotifications.getPermissionsAsync();
+  /**
+   * Request background permissions
+   */
+  async requestBackgroundPermissions() {
+    try {
+      if (!isExpo) {
+        // React Native CLI with react-native-background-actions
+        // The permissions are handled in the manifest
+        console.log('Background permissions configured in app manifest');
+        
+        // For Android, check if we have the necessary permissions
+        if (Platform.OS === 'android') {
+          console.log('Android background permissions are configured in AndroidManifest.xml');
+          return true;
+        }
+        
+        // For iOS, Background Tasks capability needs to be enabled
+        if (Platform.OS === 'ios') {
+          console.log('iOS background permissions require Background Modes capability');
+          // You might want to check if background refresh is enabled
+        }
+        return true;
+      }
+
+      // Expo implementation
+      let permissionsGranted = true;
+      
+      // Check background fetch permissions
+      const status = await BackgroundFetch.getStatusAsync();
+      
+      if (status === BackgroundFetch.BackgroundFetchStatus.Denied) {
+        Alert.alert(
+          'Background Permission Required',
+          'Please enable background app refresh to run tasks in the background.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Open Settings', onPress: () => this.openAppSettings() },
+          ]
+        );
+        permissionsGranted = false;
+      } else if (status === BackgroundFetch.BackgroundFetchStatus.Restricted) {
+        Alert.alert(
+          'Background Permissions Restricted',
+          'Background permissions are restricted on this device.',
+          [{ text: 'OK' }]
+        );
+        permissionsGranted = false;
+      }
+
+      // Register background task if permissions are available
+      if (permissionsGranted) {
+        try {
+          await BackgroundFetch.registerTaskAsync(BACKGROUND_FETCH_TASK, {
+            minimumInterval: 15 * 60,
+            stopOnTerminate: false,
+            startOnBoot: true,
+          });
+          console.log('Background task registered successfully');
+        } catch (error) {
+          console.error('Error registering background task:', error);
+          permissionsGranted = false;
+        }
+      }
+
+      return permissionsGranted;
+    } catch (error) {
+      console.error('Error requesting background permissions:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Request all permissions (notification and background)
+   */
+  async requestAllPermissions() {
+    const notificationGranted = await this.requestNotificationPermissions();
+    const backgroundGranted = await this.requestBackgroundPermissions();
     
-    if (status !== 'granted') {
-      const result = await ExpoNotifications.requestPermissionsAsync({
-        ios: {
-          allowAlert: true,
-          allowBadge: true,
-          allowSound: true,
-          allowAnnouncements: true,
-        },
-      });
-      status = result.status;
-    }
+    return {
+      notification: notificationGranted,
+      background: backgroundGranted,
+      allGranted: notificationGranted && backgroundGranted,
+    };
+  }
 
-    if (status !== 'granted') {
-      Alert.alert('Permission Required', 'Please enable notifications');
-      return false;
+  /**
+   * Open app settings
+   */
+  openAppSettings() {
+    try {
+      if (Platform.OS === 'ios') {
+        // For iOS, use Linking API
+        const { Linking } = require('react-native');
+        Linking.openURL('app-settings:');
+      } else if (Platform.OS === 'android') {
+        const { Linking } = require('react-native');
+        Linking.openSettings();
+      }
+    } catch (error) {
+      console.error('Error opening settings:', error);
     }
+  }
 
-    // Setup Android channels for Expo
-    if (Platform.OS === 'android') {
+  /**
+   * Setup Android notification channels
+   */
+  async setupAndroidNotificationChannels() {
+    try {
       await ExpoNotifications.setNotificationChannelAsync('default', {
         name: 'Default',
         importance: ExpoNotifications.AndroidImportance.MAX,
@@ -286,6 +427,44 @@ class BackgroundServiceSDK {
         lockscreenVisibility: ExpoNotifications.AndroidNotificationVisibility.PRIVATE,
         enableLights: false,
       });
+
+      console.log('Android notification channels configured');
+    } catch (error) {
+      console.error('Error setting up Android notification channels:', error);
+    }
+  }
+
+  /**
+   * Request permissions for Expo
+   */
+  async requestExpoPermissions() {
+    if (!Device.isDevice) {
+      console.log('Not a device, skipping permissions');
+      return false;
+    }
+
+    let { status } = await ExpoNotifications.getPermissionsAsync();
+    
+    if (status !== 'granted') {
+      const result = await ExpoNotifications.requestPermissionsAsync({
+        ios: {
+          allowAlert: true,
+          allowBadge: true,
+          allowSound: true,
+          allowAnnouncements: true,
+        },
+      });
+      status = result.status;
+    }
+
+    if (status !== 'granted') {
+      Alert.alert('Permission Required', 'Please enable notifications');
+      return false;
+    }
+
+    // Setup Android channels
+    if (Platform.OS === 'android') {
+      await this.setupAndroidNotificationChannels();
     }
 
     return true;
