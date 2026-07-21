@@ -9,7 +9,7 @@ import * as TaskManager from 'expo-task-manager';
 // Check if we're in Expo or React Native CLI
 const isExpo = !!(globalThis).Expo;
 
-// Define background task names 
+// Define background task names
 const BACKGROUND_TASK_NAME = 'BACKGROUND_SERVICE_TASK';
 const BACKGROUND_FETCH_TASK = 'BACKGROUND_FETCH_TASK';
 
@@ -52,7 +52,7 @@ class BackgroundServiceSDK {
     this.lastExecutionTime = null;
     this.backgroundTaskRunning = false;
     this.appState = AppState.currentState;
-    
+
     // Store callbacks
     this.callbacks = {
       onNotification: null,
@@ -63,17 +63,17 @@ class BackgroundServiceSDK {
       onTaskProgress: null,
       onAppStateChange: null,
     };
-    
+
     // Store the last persistent notification
     this.lastPersistentNotification = null;
     this.lastPersistentNotificationData = null;
-    
+
     // Track execution count
     this.executionCount = 0;
-    
+
     // Setup app state listener for background/foreground detection
     this.setupAppStateListener();
-    
+
     if (isExpo) {
       this.setupExpoNotifications();
       this.setupExpoBackgroundFetch();
@@ -89,13 +89,13 @@ class BackgroundServiceSDK {
     AppState.addEventListener('change', (nextAppState) => {
       const prevAppState = this.appState;
       this.appState = nextAppState;
-      
+
       if (this.callbacks.onAppStateChange) {
         this.callbacks.onAppStateChange(nextAppState, prevAppState);
       }
-      
+
       console.log('App state changed:', prevAppState, '->', nextAppState);
-      
+
       // Handle background/foreground transitions
       if (nextAppState === 'background' && this.isRunning) {
         this.onAppBackground();
@@ -136,7 +136,7 @@ class BackgroundServiceSDK {
     const seconds = Math.floor(diff / 1000);
     const minutes = Math.floor(seconds / 60);
     const hours = Math.floor(minutes / 60);
-    
+
     if (hours > 0) return `${hours}h ${minutes % 60}m`;
     if (minutes > 0) return `${minutes}m ${seconds % 60}s`;
     return `${seconds}s`;
@@ -228,7 +228,7 @@ class BackgroundServiceSDK {
           console.log('Android notification permissions are configured in manifest');
           return true;
         }
-        
+
         // iOS - request permissions using react-native-push-notification
         console.log('Requesting iOS notification permissions');
         return true;
@@ -241,7 +241,7 @@ class BackgroundServiceSDK {
       }
 
       let { status } = await ExpoNotifications.getPermissionsAsync();
-      
+
       if (status !== 'granted') {
         const result = await ExpoNotifications.requestPermissionsAsync({
           ios: {
@@ -255,7 +255,7 @@ class BackgroundServiceSDK {
       }
 
       const granted = status === 'granted';
-      
+
       if (!granted) {
         Alert.alert(
           'Permission Required',
@@ -288,13 +288,13 @@ class BackgroundServiceSDK {
         // React Native CLI with react-native-background-actions
         // The permissions are handled in the manifest
         console.log('Background permissions configured in app manifest');
-        
+
         // For Android, check if we have the necessary permissions
         if (Platform.OS === 'android') {
           console.log('Android background permissions are configured in AndroidManifest.xml');
           return true;
         }
-        
+
         // For iOS, Background Tasks capability needs to be enabled
         if (Platform.OS === 'ios') {
           console.log('iOS background permissions require Background Modes capability');
@@ -305,10 +305,10 @@ class BackgroundServiceSDK {
 
       // Expo implementation
       let permissionsGranted = true;
-      
+
       // Check background fetch permissions
       const status = await BackgroundFetch.getStatusAsync();
-      
+
       if (status === BackgroundFetch.BackgroundFetchStatus.Denied) {
         Alert.alert(
           'Background Permission Required',
@@ -356,7 +356,7 @@ class BackgroundServiceSDK {
   async requestAllPermissions() {
     const notificationGranted = await this.requestNotificationPermissions();
     const backgroundGranted = await this.requestBackgroundPermissions();
-    
+
     return {
       notification: notificationGranted,
       background: backgroundGranted,
@@ -444,7 +444,7 @@ class BackgroundServiceSDK {
     }
 
     let { status } = await ExpoNotifications.getPermissionsAsync();
-    
+
     if (status !== 'granted') {
       const result = await ExpoNotifications.requestPermissionsAsync({
         ios: {
@@ -571,16 +571,16 @@ class BackgroundServiceSDK {
 
       this.task = backgroundTask;
       this.taskOptions = taskOptions;
-      
+
       await BackgroundService.start(backgroundTask, taskOptions);
       this.isRunning = true;
-      
+
       // Show persistent notification
       this.showPersistentNotification(
         `🟢 ${defaultOptions.taskTitle}`,
         `Service started - ${this.getUptime()}`,
         {
-          data: { 
+          data: {
             serviceId: 'background-service',
             startTime: Date.now(),
           },
@@ -598,7 +598,7 @@ class BackgroundServiceSDK {
           console.error('Task error:', error);
           return;
         }
-        
+
         try {
           await backgroundTask(data || {});
         } catch (err) {
@@ -614,13 +614,13 @@ class BackgroundServiceSDK {
       });
 
       this.isRunning = true;
-      
+
       // Show persistent notification for Expo (mimicking)
       this.showPersistentNotification(
         `🟢 ${defaultOptions.taskTitle}`,
         `Service started (Expo) - ${this.getUptime()}`,
         {
-          data: { 
+          data: {
             serviceId: 'background-service-expo',
             startTime: Date.now(),
           },
@@ -637,7 +637,7 @@ class BackgroundServiceSDK {
    */
   async executeBackgroundTask() {
     if (this.backgroundTaskRunning) return;
-    
+
     try {
       this.backgroundTaskRunning = true;
       this.lastExecutionTime = Date.now();
@@ -666,29 +666,29 @@ class BackgroundServiceSDK {
         await BackgroundFetch.unregisterTaskAsync(BACKGROUND_TASK_NAME);
         await TaskManager.unregisterAllTasksAsync();
       }
-      
+
       this.isRunning = false;
       this.backgroundTaskRunning = false;
-      
+
       // Remove persistent notification
       this.removePersistentNotification();
-      
+
       // Show stopped notification
       this.showNotification(
         '⏹️ Service Stopped',
         'Background service has been stopped',
         {
-          data: { 
+          data: {
             stoppedAt: Date.now(),
             totalExecutions: this.executionCount,
           },
         }
       );
-      
+
       if (this.callbacks.onTaskStop) {
         this.callbacks.onTaskStop();
       }
-      
+
       console.log('Background task stopped');
       return true;
     } catch (error) {
@@ -768,7 +768,7 @@ class BackgroundServiceSDK {
           content: notificationContent,
           trigger: options.trigger || null,
         });
-        
+
         this.lastPersistentNotification = result;
         notificationId = result;
         this.lastPersistentNotificationData = {
@@ -808,7 +808,7 @@ class BackgroundServiceSDK {
    */
   async updateProgressNotification(progress, title = 'Processing', message = 'Please wait...') {
     const progressBar = '█'.repeat(Math.floor(progress / 10)) + '░'.repeat(10 - Math.floor(progress / 10));
-    
+
     return this.updatePersistentNotification(
       title,
       `${message}\n${progressBar} ${progress}%`,
@@ -1163,7 +1163,7 @@ class BackgroundServiceSDK {
     if (this.isRunning) {
       await this.stopBackgroundTask();
     }
-    
+
     if (isExpo) {
       if (this.notificationListener) {
         ExpoNotifications.removeNotificationSubscription(this.notificationListener);
@@ -1173,7 +1173,7 @@ class BackgroundServiceSDK {
       }
       await TaskManager.unregisterAllTasksAsync();
     }
-    
+
     this.cancelAllNotifications();
     this.isInitialized = false;
     this.isRunning = false;
@@ -1183,4 +1183,12 @@ class BackgroundServiceSDK {
 
 // Create and export singleton
 const backgroundServiceSDK = new BackgroundServiceSDK();
+
+// Named export (fixes barrel files/consumers doing:
+//   import { backgroundServiceSDK } from '../../services/blesdk/main';
+// A default-only export here becomes `undefined` when re-exported as a
+// named binding incorrectly in main.js, which is what was causing
+// "Cannot read property 'initialize' of undefined".
+export { backgroundServiceSDK };
+
 export default backgroundServiceSDK;
