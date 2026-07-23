@@ -7,6 +7,9 @@
   "type": "module",
   "license": "MIT",
   "private": false,
+    "expo": {
+    "plugin": "./src/bgnp.js"
+  },
   "keywords": [
     "react-native",
     "ble",
