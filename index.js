@@ -1,14 +1,13 @@
 import BLE from "./src/BLEService";
 export { consoleApp, getCurrentStatus } from "./src/handlelogs";
 export {
-  requestNotificationPermissions,
-  showPersistentStatusNotification,
-  updatePersistentStatusNotification,
-  clearPersistentStatusNotification,
-  enablePersistentNotifications,
-  isPersistentNotificationDisabled,
-  sendLocalPushNotification,
-  sendBLENotification,  
+   requestNotificationPermission,
+  startBackgroundService,
+  stopBackgroundService,
+  isBackgroundServiceRunning,
+  subscribeToBackgroundTicks,
+  sendNormalNotification,
+  updatePersistentNotification
 } from "./src/bgn";
 export { checkForOTAUpdates } from "./src/update";
 
