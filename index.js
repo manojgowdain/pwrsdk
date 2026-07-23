@@ -1,14 +1,6 @@
 import BLE from "./src/BLEService";
 export { consoleApp, getCurrentStatus } from "./src/handlelogs";
-export {
-   requestNotificationPermission,
-  startBackgroundService,
-  stopBackgroundService,
-  isBackgroundServiceRunning,
-  subscribeToBackgroundTicks,
-  sendNormalNotification,
-  updatePersistentNotification
-} from "./src/bgn";
+export * from "./src/bgn";
 export { checkForOTAUpdates } from "./src/update";
 
 export const requestBlePermission = () => BLE.requestPermissions();
