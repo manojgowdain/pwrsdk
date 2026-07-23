@@ -20,17 +20,19 @@ Notifications.setNotificationHandler({
  * Configure notification channel (Android)
  */
 export const configureNotifications = async () => {
-  if (Platform.OS === "android") {
-    await Notifications.setNotificationChannelAsync("default", {
-      name: "Default",
-      importance: Notifications.AndroidImportance.HIGH,
-      vibrationPattern: [0, 250, 250, 250],
-      enableVibrate: true,
-      sound: "default",
-      lockscreenVisibility:
-        Notifications.AndroidNotificationVisibility.PUBLIC,
-    });
-  }
+  if (Platform.OS !== "android") return;
+
+  await Notifications.setNotificationChannelAsync("default", {
+    name: "Default",
+    importance: Notifications.AndroidImportance.HIGH,
+    vibrationPattern: [0, 250, 250, 250],
+    enableVibrate: true,
+    lockscreenVisibility:
+      Notifications.AndroidNotificationVisibility.PUBLIC,
+    bypassDnd: false,
+    showBadge: true,
+    enableLights: true,
+  });
 };
 
 /**
@@ -55,6 +57,9 @@ export const requestNotificationPermission = async () => {
   }
 };
 
+/**
+ * Background Service Options
+ */
 export const backgroundServiceOptions = {
   taskName: "MBService",
   taskTitle: "BLE Connected",
@@ -71,11 +76,14 @@ export const backgroundServiceOptions = {
   },
 };
 
+/**
+ * Sleep helper
+ */
 export const sleep = (time) =>
   new Promise((resolve) => setTimeout(resolve, time));
 
 /**
- * Background loop
+ * Background Loop
  */
 export const veryIntensiveTask = async (taskDataArguments) => {
   const { delay } = taskDataArguments;
@@ -87,10 +95,14 @@ export const veryIntensiveTask = async (taskDataArguments) => {
 
     console.log("Background Tick:", counter);
 
-    await BackgroundService.updateNotification({
-      taskTitle: backgroundServiceOptions.taskTitle,
-      taskDesc: `Running ${new Date().toLocaleTimeString()}`,
-    });
+    try {
+      await BackgroundService.updateNotification({
+        taskTitle: backgroundServiceOptions.taskTitle,
+        taskDesc: `Running ${new Date().toLocaleTimeString()}`,
+      });
+    } catch (e) {
+      console.log("Notification update error:", e);
+    }
 
     DeviceEventEmitter.emit(BACKGROUND_TICK_EVENT, {
       counter,
@@ -102,7 +114,7 @@ export const veryIntensiveTask = async (taskDataArguments) => {
 };
 
 /**
- * Start background service
+ * Start Background Service
  */
 export const startBackgroundService = async (options = {}) => {
   try {
@@ -123,7 +135,7 @@ export const startBackgroundService = async (options = {}) => {
       ...options,
       parameters: {
         ...backgroundServiceOptions.parameters,
-        ...options.parameters,
+        ...(options.parameters || {}),
       },
     });
 
@@ -137,7 +149,7 @@ export const startBackgroundService = async (options = {}) => {
 };
 
 /**
- * Stop background service
+ * Stop Background Service
  */
 export const stopBackgroundService = async () => {
   try {
@@ -154,17 +166,20 @@ export const stopBackgroundService = async () => {
 };
 
 /**
- * Is background service running
+ * Check if Background Service is Running
  */
 export const isBackgroundServiceRunning = () => {
   return BackgroundService.isRunning();
 };
 
 /**
- * Listen for background ticks
+ * Subscribe to Background Tick Events
  */
 export const subscribeToBackgroundTicks = (listener) => {
-  return DeviceEventEmitter.addListener(BACKGROUND_TICK_EVENT, listener);
+  return DeviceEventEmitter.addListener(
+    BACKGROUND_TICK_EVENT,
+    listener
+  );
 };
 
 /**
@@ -176,12 +191,13 @@ export const sendNormalNotification = async (
   data = {}
 ) => {
   try {
+    await configureNotifications();
+
     await Notifications.scheduleNotificationAsync({
       content: {
         title,
         body,
         data,
-        sound: "default",
         ...(Platform.OS === "android"
           ? {
               channelId: "default",
@@ -198,7 +214,7 @@ export const sendNormalNotification = async (
 };
 
 /**
- * Update Foreground Persistent Notification
+ * Update Foreground Notification
  */
 export const updatePersistentNotification = async (options = {}) => {
   try {
@@ -216,20 +232,20 @@ export const updatePersistentNotification = async (options = {}) => {
         backgroundServiceOptions.taskDesc,
     });
 
-    console.log("Persistent notification updated:", options);
+    console.log("Persistent notification updated");
   } catch (e) {
     console.log("Failed to update persistent notification:", e);
   }
 };
 
 /**
- * Cancel all local notifications
+ * Cancel all notifications
  */
 export const cancelAllNotifications = async () => {
   try {
     await Notifications.dismissAllNotificationsAsync();
   } catch (e) {
-    console.log(e);
+    console.log("Cancel notifications error:", e);
   }
 };
 
@@ -240,6 +256,6 @@ export const cancelNotification = async (identifier) => {
   try {
     await Notifications.cancelScheduledNotificationAsync(identifier);
   } catch (e) {
-    console.log(e);
+    console.log("Cancel notification error:", e);
   }
 };
