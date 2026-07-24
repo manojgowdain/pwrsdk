@@ -1,7 +1,8 @@
 import "react-native-get-random-values";
 import { BleManager } from "react-native-ble-plx";
 import { Platform, PermissionsAndroid } from "react-native";
-import { decode as atob } from "base-64";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { decode as atob, encode as btoa } from "base-64";
 import { SERVICE_UUID, CHARACTERISTICS } from "./BLEConfig.js";
 import { KalmanFilter } from "./KalmanFilter.js";
 import {
@@ -14,9 +15,13 @@ import {
   CharacteristicUUIDSchema,
 } from "./BLEService.schema.js";
 
+const LAST_DEVICE_ID_KEY = "haloband:lastBleDeviceId";
+
 class BLEService {
   constructor() {
-    this.manager = new BleManager();
+    this.manager = new BleManager({
+      restoreStateIdentifier: "BleBackgroundRestoreId",
+    });
     this.device = null;
     this.subscription = null;
 
@@ -118,11 +123,12 @@ class BLEService {
     this.device = await device.connect();
 
     await this.device.discoverAllServicesAndCharacteristics();
+    await this.rememberDeviceId(this.device.id);
 
     // Fresh device, fresh sensor stream — don't let filters carry
     // stale estimates over from a previous connection.
     this._resetFilters();
-    this.syncDeviceTime()
+    await this.syncDeviceTime();
     return this.device;
   }
 
@@ -137,12 +143,14 @@ class BLEService {
       throw new Error(`autoConnect() invalid deviceId: ${parsed.error.message}`);
     }
 
+    await this.rememberDeviceId(parsed.data);
+
     this.device = await this.manager.connectToDevice(parsed.data);
 
     await this.device.discoverAllServicesAndCharacteristics();
 
     this._resetFilters();
-    this.syncDeviceTime()
+    await this.syncDeviceTime();
     return this.device;
   }
 
@@ -171,6 +179,7 @@ class BLEService {
     await this.device.cancelConnection();
 
     this.device = null;
+    await this.clearRememberedDeviceId();
   }
 
   // ==========================
@@ -392,6 +401,25 @@ class BLEService {
   // ==========================
   getConnectedDevice() {
     return this.device;
+  }
+
+  async rememberDeviceId(deviceId) {
+    const parsed = DeviceIdSchema.safeParse(deviceId);
+    if (!parsed.success) return false;
+
+    await AsyncStorage.setItem(LAST_DEVICE_ID_KEY, parsed.data);
+    return true;
+  }
+
+  async getRememberedDeviceId() {
+    const deviceId = await AsyncStorage.getItem(LAST_DEVICE_ID_KEY);
+    const parsed = DeviceIdSchema.safeParse(deviceId);
+
+    return parsed.success ? parsed.data : null;
+  }
+
+  async clearRememberedDeviceId() {
+    await AsyncStorage.removeItem(LAST_DEVICE_ID_KEY);
   }
 
   // ==========================
