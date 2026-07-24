@@ -40,8 +40,11 @@ export const disconnect = () => BLE.disconnect();
 
 export const isConnected = () => BLE.isConnected();
 
-export const monitorHealthMetrics = (callback) =>
-  BLE.monitorHealthMetrics(callback);
+export const monitorHealthMetrics = (callback, options) =>
+  BLE.monitorHealthMetrics(callback, options);
+
+export const monitorData = (callback, options) =>
+  BLE.monitorHealthMetrics(callback, options);
 
 export const stopMonitoring = () => BLE.stopMonitoring();
 

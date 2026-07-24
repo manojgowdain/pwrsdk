@@ -8,7 +8,7 @@
   "license": "MIT",
   "private": false,
   "expo": {
-    "plugin": "./src/bgnp.js"
+    "plugin": "./src/bgnp.cjs"
   },
   "keywords": [
     "react-native",
