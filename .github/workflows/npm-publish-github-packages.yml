@@ -2,7 +2,10 @@ name: Publish Private Package
 
 on:
   release:
-    types: [created]
+    types: [published]
+  push:
+    tags:
+      - 'v*'
   workflow_dispatch:
 
 jobs:
@@ -18,8 +21,16 @@ jobs:
           node-version: 20
           registry-url: https://npm.pkg.github.com/
           scope: '@manojgowdain'
+      - name: Configure GitHub Packages auth
+        run: |
+          echo "@manojgowdain:registry=https://npm.pkg.github.com" >> ~/.npmrc
+          echo "//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}" >> ~/.npmrc
+          echo "always-auth=true" >> ~/.npmrc
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: npm ci
       - run: npm test
-      - run: npm publish
+      - run: npm pack --dry-run
+      - run: npm publish --registry https://npm.pkg.github.com
         env:
           NODE_AUTH_TOKEN: ${{secrets.GITHUB_TOKEN}}
