@@ -5,6 +5,7 @@ import BLE from "./BLEService.js";
 
 const BACKGROUND_TICK_EVENT = "haloband-background-tick";
 const BACKGROUND_BLE_EVENT = "haloband-background-ble";
+const DEFAULT_LINKING_URI = "haloband://";
 
 /**
  * Configure how notifications are displayed
@@ -71,7 +72,7 @@ export const backgroundServiceOptions = {
     type: "mipmap",
   },
   color: "#2196F3",
-  linkingURI: "",
+  linkingURI: DEFAULT_LINKING_URI,
   foregroundServiceType: ["connectedDevice"],
   parameters: {
     delay: 2000,
@@ -291,6 +292,14 @@ export const subscribeToBackgroundBle = (listener) => {
   return DeviceEventEmitter.addListener(BACKGROUND_BLE_EVENT, listener);
 };
 
+export const getLastNotificationResponse = () => {
+  return Notifications.getLastNotificationResponseAsync();
+};
+
+export const subscribeToNotificationTaps = (listener) => {
+  return Notifications.addNotificationResponseReceivedListener(listener);
+};
+
 /**
  * Send Local Notification
  */
@@ -306,7 +315,10 @@ export const sendNormalNotification = async (
       content: {
         title,
         body,
-        data,
+        data: {
+          url: DEFAULT_LINKING_URI,
+          ...data,
+        },
         ...(Platform.OS === "android"
           ? {
               channelId: "default",
