@@ -128,6 +128,10 @@ const ensureBackgroundBleConnection = async ({
     emitBleStatus({ connected: true, deviceId: activeDeviceId, reconnected: false });
   }
 
+  if (BLE.hasActiveMonitor()) {
+    return true;
+  }
+
   BLE.monitorHealthMetrics((error, metrics) => {
     if (error) {
       emitBleStatus({ connected: false, deviceId: activeDeviceId, error: error.message });
@@ -137,6 +141,8 @@ const ensureBackgroundBleConnection = async ({
 
     emitBleStatus({ connected: true, deviceId: activeDeviceId, metrics });
     onHealthMetrics?.(metrics);
+  }, {
+    replaceExisting: false,
   });
 
   return true;
@@ -179,6 +185,14 @@ export const veryIntensiveTask = async (taskDataArguments = {}) => {
       }
     } else {
       bleConnected = await BLE.isConnected();
+
+      if (bleConnected && !BLE.hasActiveMonitor()) {
+        bleConnected = await ensureBackgroundBleConnection({
+          deviceId,
+          onHealthMetrics,
+          onBleError,
+        });
+      }
     }
 
     try {

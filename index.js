@@ -45,6 +45,8 @@ export const monitorHealthMetrics = (callback) =>
 
 export const stopMonitoring = () => BLE.stopMonitoring();
 
+export const hasActiveMonitor = () => BLE.hasActiveMonitor();
+
 export const stopScan = () => BLE.stopScan();
 
 // characteristicUUID defaults to undefined here so BLEService falls

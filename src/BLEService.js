@@ -24,6 +24,7 @@ class BLEService {
     });
     this.device = null;
     this.subscription = null;
+    this.monitorRestartTimer = null;
 
     // Kalman filters smooth the noisy sensor channels (HR, SpO2,
     // temperature) so a single garbage/dropped-bit sample from the
@@ -176,6 +177,7 @@ class BLEService {
   async disconnect() {
     if (!this.device) return;
 
+    this.stopMonitoring();
     await this.device.cancelConnection();
 
     this.device = null;
@@ -194,10 +196,22 @@ class BLEService {
   // instead of appearing as a spike in the UI. Battery and steps
   // pass through unfiltered since they're not noisy analog signals.
   // ==========================
-  monitorHealthMetrics(callback) {
+  monitorHealthMetrics(callback, options = {}) {
+    const {
+      replaceExisting = true,
+      restartOnCancel = true,
+      restartDelay = 1000,
+    } = options;
+
     if (!this.device) return;
 
+    this.clearMonitorRestart();
+
     if (this.subscription) {
+      if (!replaceExisting) {
+        return this.subscription;
+      }
+
       this.subscription.remove();
       this.subscription = null;
     }
@@ -207,6 +221,17 @@ class BLEService {
       CHARACTERISTICS.data,
       (error, characteristic) => {
         if (error) {
+          this.subscription = null;
+
+          if (restartOnCancel && this.isMonitorCancellationError(error)) {
+            this.scheduleMonitorRestart(callback, {
+              ...options,
+              replaceExisting: false,
+              restartOnCancel,
+              restartDelay,
+            });
+          }
+
           callback(error, null);
           return;
         }
@@ -303,10 +328,41 @@ class BLEService {
   }
 
   stopMonitoring() {
+    this.clearMonitorRestart();
+
     if (this.subscription) {
       this.subscription.remove();
       this.subscription = null;
     }
+  }
+
+  hasActiveMonitor() {
+    return Boolean(this.subscription);
+  }
+
+  clearMonitorRestart() {
+    if (this.monitorRestartTimer) {
+      clearTimeout(this.monitorRestartTimer);
+      this.monitorRestartTimer = null;
+    }
+  }
+
+  isMonitorCancellationError(error) {
+    const message = String(error?.message || error || "").toLowerCase();
+    return message.includes("operation was cancelled") || message.includes("operation canceled");
+  }
+
+  scheduleMonitorRestart(callback, options) {
+    this.clearMonitorRestart();
+
+    this.monitorRestartTimer = setTimeout(async () => {
+      this.monitorRestartTimer = null;
+
+      if (!(await this.isConnected())) return;
+
+      console.log("BLE monitor cancelled while connected, restarting monitor");
+      this.monitorHealthMetrics(callback, options);
+    }, options.restartDelay);
   }
 
 
