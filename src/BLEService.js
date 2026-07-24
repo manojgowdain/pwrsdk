@@ -349,7 +349,7 @@ class BLEService {
             steps: validSteps,
             calories,
             distance, // km
-            raw,
+            // raw,
           };
 
           const outputResult = HealthMetricsSchema.safeParse(healthMetrics);

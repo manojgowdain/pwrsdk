@@ -36,7 +36,7 @@ export const HealthMetricsSchema = z.object({
   steps: z.number(),
   calories: z.number(),
   distance: z.number(),
-  raw: z.string(),
+  // raw: z.string(),
 });
 
 export const DeviceIdSchema = z.string().min(1, "deviceId must be a non-empty string");
