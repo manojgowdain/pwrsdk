@@ -258,6 +258,13 @@ export const startBackgroundService = async (options = {}) => {
       return true;
     }
 
+    const bleGranted = await BLE.requestPermissions();
+
+    if (!bleGranted) {
+      console.log("Bluetooth permission denied");
+      return false;
+    }
+
     const granted = await requestNotificationPermission();
 
     if (!granted) {

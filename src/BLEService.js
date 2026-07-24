@@ -113,6 +113,11 @@ class BLEService {
   // since it calls device.connect() directly.
   // ==========================
   async connect(device) {
+    const hasPermission = await this.requestPermissions();
+    if (!hasPermission) {
+      throw new Error("Bluetooth permission denied");
+    }
+
     const parsed = DeviceObjectSchema.safeParse(device);
     if (!parsed.success) {
       throw new Error(
@@ -140,6 +145,11 @@ class BLEService {
   // object, since there's no live scan result to call .connect() on.
   // ==========================
   async autoConnect(deviceId) {
+    const hasPermission = await this.requestPermissions();
+    if (!hasPermission) {
+      throw new Error("Bluetooth permission denied");
+    }
+
     const parsed = DeviceIdSchema.safeParse(deviceId);
     if (!parsed.success) {
       throw new Error(`autoConnect() invalid deviceId: ${parsed.error.message}`);
