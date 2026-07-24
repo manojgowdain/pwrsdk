@@ -122,7 +122,7 @@ class BLEService {
     // Fresh device, fresh sensor stream — don't let filters carry
     // stale estimates over from a previous connection.
     this._resetFilters();
-
+    this.syncDeviceTime()
     return this.device;
   }
 
@@ -142,7 +142,7 @@ class BLEService {
     await this.device.discoverAllServicesAndCharacteristics();
 
     this._resetFilters();
-
+    this.syncDeviceTime()
     return this.device;
   }
 
@@ -299,6 +299,30 @@ class BLEService {
       this.subscription = null;
     }
   }
+
+
+  async syncDeviceTime() {
+  if (!this.device) {
+    throw new Error("No Device Connected");
+  }
+
+  const now = new Date();
+
+  const pad = (n) => String(n).padStart(2, "0");
+
+  // Format: YYYY-MM-DD HH:mm:ss
+  const timeString =
+    `${now.getFullYear()}-` +
+    `${pad(now.getMonth() + 1)}-` +
+    `${pad(now.getDate())} ` +
+    `${pad(now.getHours())}:` +
+    `${pad(now.getMinutes())}:` +
+    `${pad(now.getSeconds())}`;
+
+  const base64Time = btoa(timeString);
+
+  return this.sendCommand(base64Time, CHARACTERISTICS.time);
+}
 
   // ==========================
   // Write Command

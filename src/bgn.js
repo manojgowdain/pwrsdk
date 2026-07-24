@@ -62,7 +62,7 @@ export const requestNotificationPermission = async () => {
  */
 export const backgroundServiceOptions = {
   taskName: "MBService",
-  taskTitle: "welcome to HaloBand",
+  taskTitle: "Welcome to HaloBand",
   taskDesc: "Waiting for Health Data...",
   taskIcon: {
     name: "ic_launcher",
