@@ -6,6 +6,7 @@ import BLE from "./BLEService.js";
 const BACKGROUND_TICK_EVENT = "haloband-background-tick";
 const BACKGROUND_BLE_EVENT = "haloband-background-ble";
 const DEFAULT_LINKING_URI = "haloband://";
+let backgroundReconnectPromise = null;
 
 /**
  * Configure how notifications are displayed
@@ -107,11 +108,29 @@ const emitBleStatus = (status) => {
   });
 };
 
+const describeBleError = (error) => {
+  if (!error) return "Unknown BLE error";
+
+  return JSON.stringify({
+    message: error.message,
+    reason: error.reason,
+    errorCode: error.errorCode,
+    attErrorCode: error.attErrorCode,
+    iosErrorCode: error.iosErrorCode,
+    androidErrorCode: error.androidErrorCode,
+  });
+};
+
 const ensureBackgroundBleConnection = async ({
   deviceId,
   onHealthMetrics,
   onBleError,
 }) => {
+  if (backgroundReconnectPromise) {
+    return backgroundReconnectPromise;
+  }
+
+  backgroundReconnectPromise = (async () => {
   const activeDeviceId = await getBackgroundDeviceId(deviceId);
 
   if (!activeDeviceId) {
@@ -135,7 +154,12 @@ const ensureBackgroundBleConnection = async ({
 
   BLE.monitorHealthMetrics((error, metrics) => {
     if (error) {
-      emitBleStatus({ connected: false, deviceId: activeDeviceId, error: error.message });
+      emitBleStatus({
+        connected: false,
+        deviceId: activeDeviceId,
+        error: error.message,
+        reason: error.reason,
+      });
       onBleError?.(error);
       return;
     }
@@ -147,6 +171,13 @@ const ensureBackgroundBleConnection = async ({
   });
 
   return true;
+  })();
+
+  try {
+    return await backgroundReconnectPromise;
+  } finally {
+    backgroundReconnectPromise = null;
+  }
 };
 
 /**
@@ -177,11 +208,12 @@ export const veryIntensiveTask = async (taskDataArguments = {}) => {
           onBleError,
         });
       } catch (e) {
-        console.log("Background BLE reconnect error:", e);
+        console.log("Background BLE reconnect error:", describeBleError(e));
         emitBleStatus({
           connected: false,
           deviceId,
           error: e.message,
+          reason: e.reason,
         });
       }
     } else {

@@ -25,6 +25,7 @@ class BLEService {
     this.device = null;
     this.subscription = null;
     this.monitorRestartTimer = null;
+    this.connectionPromise = null;
 
     // Kalman filters smooth the noisy sensor channels (HR, SpO2,
     // temperature) so a single garbage/dropped-bit sample from the
@@ -144,15 +145,46 @@ class BLEService {
       throw new Error(`autoConnect() invalid deviceId: ${parsed.error.message}`);
     }
 
+    if (this.connectionPromise) {
+      return this.connectionPromise;
+    }
+
     await this.rememberDeviceId(parsed.data);
 
-    this.device = await this.manager.connectToDevice(parsed.data);
+    this.connectionPromise = (async () => {
+      try {
+        this.stopMonitoring();
 
-    await this.device.discoverAllServicesAndCharacteristics();
+        const connectedDevices = await this.manager.connectedDevices([SERVICE_UUID]);
+        this.device =
+          connectedDevices.find((device) => device.id === parsed.data) ||
+          (await this.manager.connectToDevice(parsed.data, {
+            autoConnect: false,
+            timeout: 15000,
+          }));
 
-    this._resetFilters();
-    await this.syncDeviceTime();
-    return this.device;
+        await this.device.discoverAllServicesAndCharacteristics();
+
+        this._resetFilters();
+
+        try {
+          await this.syncDeviceTime();
+        } catch (err) {
+          console.log("Device time sync failed:", this.describeBleError(err));
+        }
+
+        return this.device;
+      } catch (err) {
+        console.log("autoConnect failed:", this.describeBleError(err));
+        this.stopMonitoring();
+        this.device = null;
+        throw err;
+      } finally {
+        this.connectionPromise = null;
+      }
+    })();
+
+    return this.connectionPromise;
   }
 
   // ==========================
@@ -365,6 +397,19 @@ class BLEService {
     }, options.restartDelay);
   }
 
+  describeBleError(error) {
+    if (!error) return "Unknown BLE error";
+
+    return JSON.stringify({
+      message: error.message,
+      reason: error.reason,
+      errorCode: error.errorCode,
+      attErrorCode: error.attErrorCode,
+      iosErrorCode: error.iosErrorCode,
+      androidErrorCode: error.androidErrorCode,
+    });
+  }
+
 
   async syncDeviceTime() {
   if (!this.device) {
@@ -487,6 +532,7 @@ class BLEService {
     this.stopMonitoring();
     this.manager.destroy();
     this.device = null;
+    this.connectionPromise = null;
   }
 }
 
