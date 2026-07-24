@@ -1,8 +1,10 @@
 import { DeviceEventEmitter, Platform } from "react-native";
 import BackgroundService from "react-native-background-actions";
 import * as Notifications from "expo-notifications";
+import BLE from "./BLEService.js";
 
 const BACKGROUND_TICK_EVENT = "haloband-background-tick";
+const BACKGROUND_BLE_EVENT = "haloband-background-ble";
 
 /**
  * Configure how notifications are displayed
@@ -70,7 +72,7 @@ export const backgroundServiceOptions = {
   },
   color: "#2196F3",
   linkingURI: "",
-  foregroundServiceType: ["dataSync"],
+  foregroundServiceType: ["connectedDevice"],
   parameters: {
     delay: 2000,
   },
@@ -82,23 +84,109 @@ export const backgroundServiceOptions = {
 export const sleep = (time) =>
   new Promise((resolve) => setTimeout(resolve, time));
 
+const getBackgroundDeviceId = async (deviceId) => {
+  if (deviceId) {
+    await BLE.rememberDeviceId(deviceId);
+    return deviceId;
+  }
+
+  const connectedDevice = BLE.getConnectedDevice();
+  if (connectedDevice?.id) {
+    await BLE.rememberDeviceId(connectedDevice.id);
+    return connectedDevice.id;
+  }
+
+  return BLE.getRememberedDeviceId();
+};
+
+const emitBleStatus = (status) => {
+  DeviceEventEmitter.emit(BACKGROUND_BLE_EVENT, {
+    ...status,
+    timestamp: Date.now(),
+  });
+};
+
+const ensureBackgroundBleConnection = async ({
+  deviceId,
+  onHealthMetrics,
+  onBleError,
+}) => {
+  const activeDeviceId = await getBackgroundDeviceId(deviceId);
+
+  if (!activeDeviceId) {
+    emitBleStatus({ connected: false, reason: "missing-device-id" });
+    return false;
+  }
+
+  const alreadyConnected = await BLE.isConnected();
+
+  if (!alreadyConnected) {
+    BLE.stopMonitoring();
+    await BLE.autoConnect(activeDeviceId);
+    emitBleStatus({ connected: true, deviceId: activeDeviceId, reconnected: true });
+  } else {
+    emitBleStatus({ connected: true, deviceId: activeDeviceId, reconnected: false });
+  }
+
+  BLE.monitorHealthMetrics((error, metrics) => {
+    if (error) {
+      emitBleStatus({ connected: false, deviceId: activeDeviceId, error: error.message });
+      onBleError?.(error);
+      return;
+    }
+
+    emitBleStatus({ connected: true, deviceId: activeDeviceId, metrics });
+    onHealthMetrics?.(metrics);
+  });
+
+  return true;
+};
+
 /**
  * Background Loop
  */
-export const veryIntensiveTask = async (taskDataArguments) => {
-  const { delay } = taskDataArguments;
+export const veryIntensiveTask = async (taskDataArguments = {}) => {
+  const {
+    delay = backgroundServiceOptions.parameters.delay,
+    deviceId,
+    onHealthMetrics,
+    onBleError,
+    reconnectEveryTicks = 5,
+  } = taskDataArguments;
 
   let counter = 0;
 
   while (BackgroundService.isRunning()) {
     counter++;
+    let bleConnected = false;
 
     console.log("Background Tick:", counter);
+
+    if (counter === 1 || counter % reconnectEveryTicks === 0) {
+      try {
+        bleConnected = await ensureBackgroundBleConnection({
+          deviceId,
+          onHealthMetrics,
+          onBleError,
+        });
+      } catch (e) {
+        console.log("Background BLE reconnect error:", e);
+        emitBleStatus({
+          connected: false,
+          deviceId,
+          error: e.message,
+        });
+      }
+    } else {
+      bleConnected = await BLE.isConnected();
+    }
 
     try {
       await BackgroundService.updateNotification({
         taskTitle: backgroundServiceOptions.taskTitle,
-        taskDesc: `Running ${new Date().toLocaleTimeString()}`,
+        taskDesc: bleConnected
+          ? `BLE connected ${new Date().toLocaleTimeString()}`
+          : `BLE reconnecting ${new Date().toLocaleTimeString()}`,
       });
     } catch (e) {
       console.log("Notification update error:", e);
@@ -180,6 +268,13 @@ export const subscribeToBackgroundTicks = (listener) => {
     BACKGROUND_TICK_EVENT,
     listener
   );
+};
+
+/**
+ * Subscribe to Background BLE Events
+ */
+export const subscribeToBackgroundBle = (listener) => {
+  return DeviceEventEmitter.addListener(BACKGROUND_BLE_EVENT, listener);
 };
 
 /**

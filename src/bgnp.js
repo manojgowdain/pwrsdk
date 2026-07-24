@@ -19,18 +19,22 @@
 //   2. Declares (or overrides, via tools:node="merge" + tools:replace) the
 //      RNBackgroundActionsTask service with foregroundServiceType="connectedDevice".
 //
-// This MUST match the `foregroundServiceTypes: ["connectedDevice"]` option
+// This MUST match the `foregroundServiceType: ["connectedDevice"]` option
 // passed to BackgroundActions.start() in notificationService.js — the two
 // have to agree or Android will silently ignore/reject the mismatched type.
 
 const { withAndroidManifest } = require("@expo/config-plugins");
 
 const SERVICE_NAME = "com.asterinet.react.bgactions.RNBackgroundActionsTask";
-const FOREGROUND_SERVICE_TYPE = "dataSync";
+const FOREGROUND_SERVICE_TYPE = "connectedDevice";
 
 const REQUIRED_PERMISSIONS = [
   "android.permission.FOREGROUND_SERVICE",
-  "android.permission.FOREGROUND_SERVICE_DATA_SYNC",
+  "android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE",
+  "android.permission.BLUETOOTH_SCAN",
+  "android.permission.BLUETOOTH_CONNECT",
+  "android.permission.ACCESS_FINE_LOCATION",
+  "android.permission.POST_NOTIFICATIONS",
 ];
 
 function ensurePermissions(androidManifest) {
