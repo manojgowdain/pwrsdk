@@ -17,6 +17,43 @@ import {
 
 const LAST_DEVICE_ID_KEY = "haloband:lastBleDeviceId";
 
+function calculateStress(hr, spo2, temp) {
+  let score = 20;
+
+  if (hr > 80) {
+    score += (hr - 80) * 1.5;
+  }
+
+  if (spo2 < 95) {
+    score += (95 - spo2) * 5;
+  }
+
+  if (temp > 37.2) {
+    score += (temp - 37.2) * 20;
+  }
+
+  score = Math.max(0, Math.min(100, Math.round(score)));
+
+  let stressLevel;
+
+  if (score <= 20) {
+    stressLevel = "Relaxed";
+  } else if (score <= 40) {
+    stressLevel = "Normal";
+  } else if (score <= 60) {
+    stressLevel = "Elevated";
+  } else if (score <= 80) {
+    stressLevel = "High";
+  } else {
+    stressLevel = "Very High";
+  }
+
+  return {
+    stressScore: score,
+    stressLevel,
+  };
+}
+
 class BLEService {
   constructor() {
     this.manager = new BleManager({
@@ -336,6 +373,7 @@ class BLEService {
           // Approximate calculations
           const calories = Number((validSteps * 0.04).toFixed(2));
           const distance = Number(((validSteps * 0.75) / 1000).toFixed(2));
+          const stress = calculateStress(smoothedHr, smoothedSpo2, smoothedTempC);
 
           const healthMetrics = {
             heartRate: smoothedHr,
@@ -349,6 +387,10 @@ class BLEService {
             steps: validSteps,
             calories,
             distance, // km
+            stress: {
+              stressScore: stress.stressScore,
+              stressLevel: stress.stressLevel,
+            },
             // raw,
           };
 

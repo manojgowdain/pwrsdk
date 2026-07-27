@@ -36,6 +36,10 @@ export const HealthMetricsSchema = z.object({
   steps: z.number(),
   calories: z.number(),
   distance: z.number(),
+  stress: z.object({
+    stressScore: z.number().min(0).max(100),
+    stressLevel: z.enum(["Relaxed", "Normal", "Elevated", "High", "Very High"]),
+  }),
   // raw: z.string(),
 });
 
