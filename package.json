@@ -1,5 +1,5 @@
 {
-  "name": "@manojgowdain/pwrsdk",
+  "name": "pwrsdk",
   "version": "1.1.0",
   "description": "React Native BLE SDK",
   "main": "index.js",
@@ -11,9 +11,6 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/manojgowdain/pwrsdk.git"
-  },
-  "publishConfig": {
-    "registry": "https://npm.pkg.github.com"
   },
   "files": [
     "index.js",
