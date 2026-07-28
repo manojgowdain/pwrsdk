@@ -16,6 +16,18 @@ import {
 } from "./BLEService.schema.js";
 
 const LAST_DEVICE_ID_KEY = "haloband:lastBleDeviceId";
+const DEFAULT_GOAL_STEPS = 10000;
+const DEFAULT_GOAL_WALKING_SPEED_KMH = 5;
+const DEFAULT_WATER_GOAL_LITERS = 3;
+
+function clampScore(value) {
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function calculateGoalPercent(value, goal) {
+  if (!Number.isFinite(goal) || goal <= 0) return 0;
+  return clampScore(Math.min((value / goal) * 100, 100));
+}
 
 function calculateStress(hr, spo2, temp) {
   let score = 20;
@@ -54,6 +66,115 @@ function calculateStress(hr, spo2, temp) {
   };
 }
 
+function calculateTemperatureStatus(tempC) {
+  if (tempC < 35) return "Low";
+  if (tempC <= 36) return "Slightly Low";
+  if (tempC <= 37.2) return "Normal";
+  if (tempC <= 38) return "Elevated";
+  return "Fever";
+}
+
+function calculateHydrationReminder({
+  calories,
+  distance,
+  waterGoalLiters = DEFAULT_WATER_GOAL_LITERS,
+  waterIntakeLiters = 0,
+}) {
+  const activityExtraLiters = Number(
+    (distance * 0.03 + (calories / 1000) * 0.5).toFixed(2)
+  );
+  const targetLiters = Number(
+    Math.min(waterGoalLiters + activityExtraLiters, 5).toFixed(2)
+  );
+  const remainingLiters = Number(
+    Math.max(targetLiters - waterIntakeLiters, 0).toFixed(2)
+  );
+
+  return {
+    targetLiters,
+    baseGoalLiters: waterGoalLiters,
+    activityExtraLiters,
+    waterIntakeLiters,
+    remainingLiters,
+    suggestedDrinkLiters: remainingLiters,
+    shouldNotify: remainingLiters > 0,
+  };
+}
+
+function calculateHealthScores({
+  hr,
+  spo2,
+  tempC,
+  steps,
+  calories,
+  distance,
+  stressScore,
+  elapsedHours,
+  goalSteps = DEFAULT_GOAL_STEPS,
+  goalCalories = goalSteps * 0.04,
+  goalDistance = (goalSteps * 0.75) / 1000,
+  goalWalkingSpeedKmh = DEFAULT_GOAL_WALKING_SPEED_KMH,
+  waterGoalLiters = DEFAULT_WATER_GOAL_LITERS,
+  waterIntakeLiters = 0,
+}) {
+  const hrScore = clampScore(100 - Math.abs(hr - 70) * 2);
+  const stressScoreNorm = clampScore(100 - stressScore);
+  const spo2Score = clampScore(spo2 >= 95 ? 100 : spo2 * 2);
+  const tempScore = clampScore(100 - Math.abs(tempC - 36.6) * 25);
+  const activityScore = clampScore(Math.min((steps / goalSteps) * 100, 100));
+  const stressPenalty = stressScore;
+  const hrPenalty = 100 - hrScore;
+  const oxygenHealth = spo2Score;
+  const wellness = clampScore(
+    0.35 * hrScore + 0.35 * stressScoreNorm + 0.2 * spo2Score + 0.1 * tempScore
+  );
+
+  const readinessScore = clampScore(
+    0.35 * hrScore + 0.35 * stressScoreNorm + 0.2 * spo2Score + 0.1 * tempScore
+  );
+  const activityLevel = activityScore;
+  const energyScore = clampScore(
+    100 - (0.3 * activityScore + 0.4 * stressPenalty + 0.3 * hrPenalty)
+  );
+  const hydrationReminder = calculateHydrationReminder({
+    calories,
+    distance,
+    waterGoalLiters,
+    waterIntakeLiters,
+  });
+  const walkingSpeedKmh =
+    elapsedHours > 0 ? Number((distance / elapsedHours).toFixed(2)) : 0;
+  const goal = {
+    steps: calculateGoalPercent(steps, goalSteps),
+    calories: calculateGoalPercent(calories, goalCalories),
+    distance: calculateGoalPercent(distance, goalDistance),
+    walkingSpeedKmh: calculateGoalPercent(walkingSpeedKmh, goalWalkingSpeedKmh),
+  };
+  const productivityScore = clampScore(
+    0.4 * wellness + 0.3 * energyScore + 0.3 * readinessScore
+  );
+  const overallHealthScore = clampScore(
+    0.2 * hrScore +
+      0.2 * oxygenHealth +
+      0.15 * activityScore +
+      0.15 * wellness +
+      0.15 * readinessScore +
+      0.15 * stressScoreNorm
+  );
+
+  return {
+    readinessScore,
+    activityLevel,
+    energyScore,
+    hydrationReminder,
+    bodyTemperatureStatus: calculateTemperatureStatus(tempC),
+    walkingSpeedKmh,
+    goal,
+    productivityScore,
+    overallHealthScore,
+  };
+}
+
 class BLEService {
   constructor() {
     this.manager = new BleManager({
@@ -62,6 +183,7 @@ class BLEService {
     this.device = null;
     this.subscription = null;
     this.monitorRestartTimer = null;
+    this.monitorStartedAt = null;
     this.connectionPromise = null;
 
     // Kalman filters smooth the noisy sensor channels (HR, SpO2,
@@ -280,6 +402,12 @@ class BLEService {
       replaceExisting = true,
       restartOnCancel = true,
       restartDelay = 1000,
+      goalSteps = DEFAULT_GOAL_STEPS,
+      goalCalories = goalSteps * 0.04,
+      goalDistance = (goalSteps * 0.75) / 1000,
+      goalWalkingSpeedKmh = DEFAULT_GOAL_WALKING_SPEED_KMH,
+      waterGoalLiters = DEFAULT_WATER_GOAL_LITERS,
+      waterIntakeLiters = 0,
     } = options;
 
     if (!this.device) return;
@@ -294,6 +422,8 @@ class BLEService {
       this.subscription.remove();
       this.subscription = null;
     }
+
+    this.monitorStartedAt = Date.now();
 
     this.subscription = this.device.monitorCharacteristicForService(
       SERVICE_UUID,
@@ -374,6 +504,25 @@ class BLEService {
           const calories = Number((validSteps * 0.04).toFixed(2));
           const distance = Number(((validSteps * 0.75) / 1000).toFixed(2));
           const stress = calculateStress(smoothedHr, smoothedSpo2, smoothedTempC);
+          const elapsedHours = this.monitorStartedAt
+            ? (Date.now() - this.monitorStartedAt) / 3600000
+            : 0;
+          const healthScores = calculateHealthScores({
+            hr: smoothedHr,
+            spo2: smoothedSpo2,
+            tempC: smoothedTempC,
+            steps: validSteps,
+            calories,
+            distance,
+            stressScore: stress.stressScore,
+            elapsedHours,
+            goalSteps,
+            goalCalories,
+            goalDistance,
+            goalWalkingSpeedKmh,
+            waterGoalLiters,
+            waterIntakeLiters,
+          });
 
           const healthMetrics = {
             heartRate: smoothedHr,
@@ -382,15 +531,26 @@ class BLEService {
               celsius: smoothedTempC,
               fahrenheit: tempF,
               kelvin: tempK,
+              bodyTemperatureStatus: healthScores.bodyTemperatureStatus,
             },
             battery: validBattery,
-            steps: validSteps,
-            calories,
-            distance, // km
+            ppg: {
+              steps: validSteps,
+              calories,
+              distance, // km
+              walkingSpeedKmh: healthScores.walkingSpeedKmh,
+              goal: healthScores.goal,
+            },
             stress: {
               stressScore: stress.stressScore,
               stressLevel: stress.stressLevel,
+              readinessScore: healthScores.readinessScore,
+              productivityScore: healthScores.productivityScore,
+              overallHealthScore: healthScores.overallHealthScore,
+              energyScore: healthScores.energyScore,
             },
+            activityLevel: healthScores.activityLevel,
+            hydrationReminder: healthScores.hydrationReminder,
             // raw,
           };
 
@@ -418,6 +578,8 @@ class BLEService {
       this.subscription.remove();
       this.subscription = null;
     }
+
+    this.monitorStartedAt = null;
   }
 
   hasActiveMonitor() {
