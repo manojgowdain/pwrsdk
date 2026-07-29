@@ -1,5 +1,5 @@
 import NetInfo from "@react-native-community/netinfo";
-
+import getDeviceInfo from "./info";
 /* ===========================
    CONFIG
 =========================== */
@@ -303,5 +303,5 @@ export function initializeLogger() {
   // console.log(`📱 Logger initialized - Status: ${isOnline ? 'ONLINE' : 'OFFLINE'}`);
   consoleApp('📱 Logger initialized');
   
-  return { consoleApp, getCurrentStatus };
+  return { consoleApp, getCurrentStatus,getDeviceInfo };
 }
